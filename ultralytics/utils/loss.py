@@ -217,12 +217,15 @@ class v8DetectionLoss:
         dtype = pred_scores.dtype
         batch_size = pred_scores.shape[0]
         imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
+        # anchor_points for different strides with its corresponding stride
         anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
 
         # Targets
         targets = torch.cat((batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1)
         targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
+        # targets shape:[batch_size, counts.max(), ne - 1]
         gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
+        # xyxy start from left-top origin(0,0)
         mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0.0)
 
         # Pboxes

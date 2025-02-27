@@ -61,6 +61,7 @@ class BaseDataset(Dataset):
         single_cls=False,
         classes=None,
         fraction=1.0,
+        usegt=False,
     ):
         """Initialize BaseDataset with given configuration and options."""
         super().__init__()
@@ -78,6 +79,7 @@ class BaseDataset(Dataset):
         self.batch_size = batch_size
         self.stride = stride
         self.pad = pad
+        self.usegt = usegt
         if self.rect:
             assert self.batch_size is not None
             self.set_rectangle()
@@ -122,6 +124,10 @@ class BaseDataset(Dataset):
                     raise FileNotFoundError(f"{self.prefix}{p} does not exist")
             im_files = sorted(x.replace("/", os.sep) for x in f if x.split(".")[-1].lower() in IMG_FORMATS)
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in IMG_FORMATS])  # pathlib
+
+            if self.usegt:
+                self.im_files = [x for x in self.im_files if not x.rsplit('.', 1)[0].endswith('_gt')]
+
             assert im_files, f"{self.prefix}No images found in {img_path}. {FORMATS_HELP_MSG}"
         except Exception as e:
             raise FileNotFoundError(f"{self.prefix}Error loading data from {img_path}\n{HELP_URL}") from e
@@ -165,6 +171,14 @@ class BaseDataset(Dataset):
                 raise FileNotFoundError(f"Image Not Found {f}")
 
             h0, w0 = im.shape[:2]  # orig hw
+            if self.usegt:
+                im_name, im_ext = os.path.splitext(f)
+                gt_file = f'{im_name}_gt{im_ext}'
+                gt = cv2.imread(gt_file)
+                gt_h, gt_w, _ = gt.shape
+                assert ((gt_h == h0) and (gt_w == w0)), "gt and img should be of the same shape!"
+                gt = cv2.cvtColor(gt, cv2.COLOR_BGR2GRAY)
+                im = np.concatenate((im, gt), dim=-1)
             if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
                 r = self.imgsz / max(h0, w0)  # ratio
                 if r != 1:  # if sizes are not equal

@@ -51,7 +51,7 @@ class TaskAlignedAssigner(nn.Module):
             mask_gt (Tensor): shape(bs, n_max_boxes, 1)
 
         Returns:
-            target_labels (Tensor): shape(bs, num_total_anchors)
+            target_labels (Tensor): shape(bs, num_total_anchors) num_total_anchors contains all strides
             target_bboxes (Tensor): shape(bs, num_total_anchors, 4)
             target_scores (Tensor): shape(bs, num_total_anchors, num_classes)
             fg_mask (Tensor): shape(bs, num_total_anchors)
