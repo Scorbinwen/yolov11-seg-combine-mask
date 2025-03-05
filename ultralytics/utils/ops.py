@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-
+import pycocotools.mask as maskUtils
 from ultralytics.utils import LOGGER
 from ultralytics.utils.metrics import batch_probiou
 
@@ -617,19 +617,12 @@ def ltwh2xyxy(x):
 
 
 def segments2boxes(segments):
-    """
-    It converts segment labels to box labels, i.e. (cls, xy1, xy2, ...) to (cls, xywh).
-
-    Args:
-        segments (list): list of segments, each segment is a list of points, each point is a list of x, y coordinates
-
-    Returns:
-        (np.ndarray): the xywh coordinates of the bounding boxes.
-    """
+    # Convert segment labels to box labels, i.e. (cls, xy1, xy2, ...) to (cls, xywh)
     boxes = []
     for s in segments:
-        x, y = s.T  # segment xy
-        boxes.append([x.min(), y.min(), x.max(), y.max()])  # cls, xyxy
+        img_h, img_w = s['size']
+        x, y, w, h = maskUtils.toBbox(s)
+        boxes.append([x/img_w, y/img_h, (x+w)/img_w, (y+h)/img_h])  # cls, xyxy
     return xyxy2xywh(np.array(boxes))  # cls, xywh
 
 

@@ -14,7 +14,7 @@ from tarfile import is_tarfile
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
-
+import pycocotools.mask as maskUtils
 from ultralytics.nn.autobackend import check_class_names
 from ultralytics.utils import (
     DATASETS_DIR,
@@ -119,9 +119,9 @@ def verify_image_label(args):
             nf = 1  # label found
             with open(lb_file) as f:
                 lb = [x.split() for x in f.read().strip().splitlines() if len(x)]
-                if any(len(x) > 6 for x in lb) and (not keypoint):  # is segment
+                if any(len(x) == 2 for x in lb):  # is segment
                     classes = np.array([x[0] for x in lb], dtype=np.float32)
-                    segments = [np.array(x[1:], dtype=np.float32).reshape(-1, 2) for x in lb]  # (cls, xy1...)
+                    segments = [{'size': [shape[0], shape[1]], 'counts': x[1]} for x in lb]  # (cls, xy1...)
                     lb = np.concatenate((classes.reshape(-1, 1), segments2boxes(segments)), 1)  # (cls, xywh)
                 lb = np.array(lb, dtype=np.float32)
             if nl := len(lb):

@@ -12,7 +12,7 @@ import torch
 from PIL import Image
 from torch.utils.data import ConcatDataset
 
-from ultralytics.utils import LOCAL_RANK, NUM_THREADS, TQDM, colorstr
+from ultralytics.utils import LOCAL_RANK, NUM_THREADS, TQDM, colorstr, rle2mask
 from ultralytics.utils.ops import resample_segments
 from ultralytics.utils.torch_utils import TORCHVISION_0_18
 
@@ -214,18 +214,13 @@ class YOLODataset(BaseDataset):
         keypoints = label.pop("keypoints", None)
         bbox_format = label.pop("bbox_format")
         normalized = label.pop("normalized")
+        resized_shape = label.pop("resized_shape")
 
-        # NOTE: do NOT resample oriented boxes
-        segment_resamples = 100 if self.use_obb else 1000
-        if len(segments) > 0:
-            # make sure segments interpolate correctly if original length is greater than segment_resamples
-            max_len = max(len(s) for s in segments)
-            segment_resamples = (max_len + 1) if segment_resamples < max_len else segment_resamples
-            # list[np.array(segment_resamples, 2)] * num_samples
-            segments = np.stack(resample_segments(segments, n=segment_resamples), axis=0)
-        else:
-            segments = np.zeros((0, segment_resamples, 2), dtype=np.float32)
-        label["instances"] = Instances(bboxes, segments, keypoints, bbox_format=bbox_format, normalized=normalized)
+        # convert segment to mask
+        seg_masks = rle2mask(segments, resized_shape)
+        label["segments"] = seg_masks
+        # An instance is namely an object
+        label["instances"] = Instances(bboxes, seg_masks, keypoints, bbox_format=bbox_format, normalized=normalized)
         return label
 
     @staticmethod
@@ -236,8 +231,9 @@ class YOLODataset(BaseDataset):
         values = list(zip(*[list(b.values()) for b in batch]))
         for i, k in enumerate(keys):
             value = values[i]
-            if k == "img":
-                value = torch.stack(value, 0)
+            if k in {"img", "gt"}:
+                if value is not None:
+                    value = torch.stack(value, 0)
             if k in {"masks", "keypoints", "bboxes", "cls", "segments", "obb"}:
                 value = torch.cat(value, 0)
             new_batch[k] = value

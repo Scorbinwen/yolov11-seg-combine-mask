@@ -10,7 +10,7 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 from ultralytics import YOLO
 
 # Load a model
-model = YOLO("../weights/yolo11l-seg.pt")
+model = YOLO("../ultralytics/cfg/models/11/yolo11-seg.yaml")
 
 # Train the model
 train_results = model.train(

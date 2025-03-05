@@ -71,6 +71,7 @@ class BaseDataset(Dataset):
         self.single_cls = single_cls
         self.prefix = prefix
         self.fraction = fraction
+        self.usegt = usegt
         self.im_files = self.get_img_files(self.img_path)
         self.labels = self.get_labels()
         self.update_labels(include_class=classes)  # single_cls and include_class
@@ -79,7 +80,6 @@ class BaseDataset(Dataset):
         self.batch_size = batch_size
         self.stride = stride
         self.pad = pad
-        self.usegt = usegt
         if self.rect:
             assert self.batch_size is not None
             self.set_rectangle()
@@ -89,7 +89,7 @@ class BaseDataset(Dataset):
         self.max_buffer_length = min((self.ni, self.batch_size * 8, 1000)) if self.augment else 0
 
         # Cache images (options are cache = True, False, None, "ram", "disk")
-        self.ims, self.im_hw0, self.im_hw = [None] * self.ni, [None] * self.ni, [None] * self.ni
+        self.ims, self.gts, self.im_hw0, self.im_hw = [None] * self.ni, [None] * self.ni, [None] * self.ni, [None] * self.ni
         self.npy_files = [Path(f).with_suffix(".npy") for f in self.im_files]
         self.cache = cache.lower() if isinstance(cache, str) else "ram" if cache is True else None
         if self.cache == "ram" and self.check_cache_ram():
@@ -124,10 +124,8 @@ class BaseDataset(Dataset):
                     raise FileNotFoundError(f"{self.prefix}{p} does not exist")
             im_files = sorted(x.replace("/", os.sep) for x in f if x.split(".")[-1].lower() in IMG_FORMATS)
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in IMG_FORMATS])  # pathlib
-
             if self.usegt:
-                self.im_files = [x for x in self.im_files if not x.rsplit('.', 1)[0].endswith('_gt')]
-
+                im_files = [x for x in im_files if not x.rsplit('.', 1)[0].endswith('_gt')]
             assert im_files, f"{self.prefix}No images found in {img_path}. {FORMATS_HELP_MSG}"
         except Exception as e:
             raise FileNotFoundError(f"{self.prefix}Error loading data from {img_path}\n{HELP_URL}") from e
@@ -156,7 +154,7 @@ class BaseDataset(Dataset):
 
     def load_image(self, i, rect_mode=True):
         """Loads 1 image from dataset index 'i', returns (im, resized hw)."""
-        im, f, fn = self.ims[i], self.im_files[i], self.npy_files[i]
+        im, gt, f, fn = self.ims[i], self.gts[i], self.im_files[i], self.npy_files[i]
         if im is None:  # not cached in RAM
             if fn.exists():  # load npy
                 try:
@@ -171,34 +169,39 @@ class BaseDataset(Dataset):
                 raise FileNotFoundError(f"Image Not Found {f}")
 
             h0, w0 = im.shape[:2]  # orig hw
+
             if self.usegt:
                 im_name, im_ext = os.path.splitext(f)
                 gt_file = f'{im_name}_gt{im_ext}'
                 gt = cv2.imread(gt_file)
                 gt_h, gt_w, _ = gt.shape
                 assert ((gt_h == h0) and (gt_w == w0)), "gt and img should be of the same shape!"
-                gt = cv2.cvtColor(gt, cv2.COLOR_BGR2GRAY)
-                im = np.concatenate((im, gt), dim=-1)
+            else:
+                gt = None
             if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
                 r = self.imgsz / max(h0, w0)  # ratio
                 if r != 1:  # if sizes are not equal
                     w, h = (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz))
                     im = cv2.resize(im, (w, h), interpolation=cv2.INTER_LINEAR)
+                    if gt is not None:
+                        gt = cv2.resize(gt, (w, h), interpolation=cv2.INTER_LINEAR)
             elif not (h0 == w0 == self.imgsz):  # resize by stretching image to square imgsz
                 im = cv2.resize(im, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
+                if gt is not None:
+                    gt = cv2.resize(gt, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
 
             # Add to buffer if training with augmentations
             if self.augment:
-                self.ims[i], self.im_hw0[i], self.im_hw[i] = im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
+                self.ims[i], self.gts[i], self.im_hw0[i], self.im_hw[i] = im, gt, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
                 self.buffer.append(i)
                 if 1 < len(self.buffer) >= self.max_buffer_length:  # prevent empty buffer
                     j = self.buffer.pop(0)
                     if self.cache != "ram":
-                        self.ims[j], self.im_hw0[j], self.im_hw[j] = None, None, None
+                        self.ims[j], self.gts[j], self.im_hw0[j], self.im_hw[j] = None, None, None, None
 
-            return im, (h0, w0), im.shape[:2]
+            return im, gt, (h0, w0), im.shape[:2]
 
-        return self.ims[i], self.im_hw0[i], self.im_hw[i]
+        return self.ims[i], self.gts[i], self.im_hw0[i], self.im_hw[i]
 
     def cache_images(self):
         """Cache images to memory or disk."""
@@ -211,7 +214,7 @@ class BaseDataset(Dataset):
                 if self.cache == "disk":
                     b += self.npy_files[i].stat().st_size
                 else:  # 'ram'
-                    self.ims[i], self.im_hw0[i], self.im_hw[i] = x  # im, hw_orig, hw_resized = load_image(self, i)
+                    self.ims[i], self.gts[i], self.im_hw0[i], self.im_hw[i] = x  # im, hw_orig, hw_resized = load_image(self, i)
                     b += self.ims[i].nbytes
                 pbar.desc = f"{self.prefix}Caching images ({b / gb:.1f}GB {storage})"
             pbar.close()
@@ -299,13 +302,15 @@ class BaseDataset(Dataset):
 
     def __getitem__(self, index):
         """Returns transformed label information for given index."""
-        return self.transforms(self.get_image_and_label(index))
+        label = self.transforms(self.get_image_and_label(index))
+        return label
 
     def get_image_and_label(self, index):
         """Get and return label information from the dataset."""
+        # label for only one object.
         label = deepcopy(self.labels[index])  # requires deepcopy() https://github.com/ultralytics/ultralytics/pull/1948
         label.pop("shape", None)  # shape is for rect, remove it
-        label["img"], label["ori_shape"], label["resized_shape"] = self.load_image(index)
+        label["img"], label["gt"], label["ori_shape"], label["resized_shape"] = self.load_image(index)
         label["ratio_pad"] = (
             label["resized_shape"][0] / label["ori_shape"][0],
             label["resized_shape"][1] / label["ori_shape"][1],

@@ -6,7 +6,7 @@ from numbers import Number
 from typing import List
 
 import numpy as np
-
+from ultralytics.utils import addmaskpad, flipmaskud, flipmasklr, scalemask
 from .ops import ltwh2xywh, ltwh2xyxy, resample_segments, xywh2ltwh, xywh2xyxy, xyxy2ltwh, xyxy2xywh
 
 
@@ -244,8 +244,12 @@ class Instances:
         self._bboxes.mul(scale=(scale_w, scale_h, scale_w, scale_h))
         if bbox_only:
             return
-        self.segments[..., 0] *= scale_w
-        self.segments[..., 1] *= scale_h
+        if len(self.segments):
+            seg_shape = self.segments[0].shape
+            new_shape = (seg_shape[0] * scale_w, seg_shape[1] * scale_h)
+            if seg_shape != new_shape:
+                self.segments = scalemask(self.segments, new_shape)
+
         if self.keypoints is not None:
             self.keypoints[..., 0] *= scale_w
             self.keypoints[..., 1] *= scale_h
@@ -255,8 +259,7 @@ class Instances:
         if not self.normalized:
             return
         self._bboxes.mul(scale=(w, h, w, h))
-        self.segments[..., 0] *= w
-        self.segments[..., 1] *= h
+
         if self.keypoints is not None:
             self.keypoints[..., 0] *= w
             self.keypoints[..., 1] *= h
@@ -267,8 +270,7 @@ class Instances:
         if self.normalized:
             return
         self._bboxes.mul(scale=(1 / w, 1 / h, 1 / w, 1 / h))
-        self.segments[..., 0] /= w
-        self.segments[..., 1] /= h
+
         if self.keypoints is not None:
             self.keypoints[..., 0] /= w
             self.keypoints[..., 1] /= h
@@ -278,8 +280,7 @@ class Instances:
         """Handle rect and mosaic situation."""
         assert not self.normalized, "you should add padding with absolute coordinates."
         self._bboxes.add(offset=(padw, padh, padw, padh))
-        self.segments[..., 0] += padw
-        self.segments[..., 1] += padh
+        self.segments = addmaskpad(self.segments, padh, padw)
         if self.keypoints is not None:
             self.keypoints[..., 0] += padw
             self.keypoints[..., 1] += padh
@@ -321,7 +322,8 @@ class Instances:
             self.bboxes[:, 3] = h - y1
         else:
             self.bboxes[:, 1] = h - self.bboxes[:, 1]
-        self.segments[..., 1] = h - self.segments[..., 1]
+
+        self.segments = flipmaskud(self.segments)
         if self.keypoints is not None:
             self.keypoints[..., 1] = h - self.keypoints[..., 1]
 
@@ -334,7 +336,9 @@ class Instances:
             self.bboxes[:, 2] = w - x1
         else:
             self.bboxes[:, 0] = w - self.bboxes[:, 0]
-        self.segments[..., 0] = w - self.segments[..., 0]
+        if len(self.segments):
+            self.segments = flipmasklr(self.segments)
+
         if self.keypoints is not None:
             self.keypoints[..., 0] = w - self.keypoints[..., 0]
 
@@ -346,8 +350,14 @@ class Instances:
         self.bboxes[:, [1, 3]] = self.bboxes[:, [1, 3]].clip(0, h)
         if ori_format != "xyxy":
             self.convert_bbox(format=ori_format)
-        self.segments[..., 0] = self.segments[..., 0].clip(0, w)
-        self.segments[..., 1] = self.segments[..., 1].clip(0, h)
+        # clip segments
+        if len(self.segments):
+            seg_shape = self.segments[0].shape
+            if seg_shape != (w, h):
+                clip_mask = np.zeros(seg_shape, dtype=self.segments.dtype)
+                clip_mask[0:w, 0:h] = 1
+                self.segments *= clip_mask
+
         if self.keypoints is not None:
             self.keypoints[..., 0] = self.keypoints[..., 0].clip(0, w)
             self.keypoints[..., 1] = self.keypoints[..., 1].clip(0, h)
@@ -357,8 +367,7 @@ class Instances:
         good = self.bbox_areas > 0
         if not all(good):
             self._bboxes = self._bboxes[good]
-            if len(self.segments):
-                self.segments = self.segments[good]
+            self.segments = self.segments[good]
             if self.keypoints is not None:
                 self.keypoints = self.keypoints[good]
         return good
@@ -406,20 +415,8 @@ class Instances:
         normalized = instances_list[0].normalized
 
         cat_boxes = np.concatenate([ins.bboxes for ins in instances_list], axis=axis)
-        seg_len = [b.segments.shape[1] for b in instances_list]
-        if len(frozenset(seg_len)) > 1:  # resample segments if there's different length
-            max_len = max(seg_len)
-            cat_segments = np.concatenate(
-                [
-                    resample_segments(list(b.segments), max_len)
-                    if len(b.segments)
-                    else np.zeros((0, max_len, 2), dtype=np.float32)  # re-generating empty segments
-                    for b in instances_list
-                ],
-                axis=axis,
-            )
-        else:
-            cat_segments = np.concatenate([b.segments for b in instances_list], axis=axis)
+
+        cat_segments = np.concatenate([b.segments for b in instances_list], axis=axis)
         cat_keypoints = np.concatenate([b.keypoints for b in instances_list], axis=axis) if use_keypoint else None
         return cls(cat_boxes, cat_segments, cat_keypoints, bbox_format, normalized)
 

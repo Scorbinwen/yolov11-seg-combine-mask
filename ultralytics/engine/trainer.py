@@ -585,6 +585,7 @@ class BaseTrainer:
             cfg = weights.yaml
         elif isinstance(self.args.pretrained, (str, Path)):
             weights, _ = attempt_load_one_weight(self.args.pretrained)
+        print(f"cfg1:{cfg}")
         self.model = self.get_model(cfg=cfg, weights=weights, verbose=RANK == -1)  # calls Model(cfg, weights)
         return ckpt
 
