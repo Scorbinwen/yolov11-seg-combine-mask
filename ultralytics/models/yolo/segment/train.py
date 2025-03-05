@@ -6,7 +6,7 @@ from ultralytics.models import yolo
 from ultralytics.nn.tasks import SegmentationModel
 from ultralytics.utils import DEFAULT_CFG, RANK
 from ultralytics.utils.plotting import plot_images, plot_results
-
+import torch
 
 class SegmentationTrainer(yolo.detect.DetectionTrainer):
     """
@@ -29,11 +29,14 @@ class SegmentationTrainer(yolo.detect.DetectionTrainer):
         overrides["task"] = "segment"
         super().__init__(cfg, overrides, _callbacks)
 
-    def get_model(self, cfg=None, weights=None, verbose=True):
+    def get_model(self, cfg=None, pretrained_ckpt=None, weights=None, verbose=True):
         """Return SegmentationModel initialized with specified config and weights."""
         model = SegmentationModel(cfg, ch=3, nc=self.data["nc"], verbose=verbose and RANK == -1)
         if weights:
             model.load(weights)
+        elif pretrained_ckpt:
+            ckpt = torch.load(pretrained_ckpt, map_location='cpu')
+            model.load(ckpt)
 
         return model
 

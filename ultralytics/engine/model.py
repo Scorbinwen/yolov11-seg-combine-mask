@@ -124,7 +124,6 @@ class Model(torch.nn.Module):
         self.task = task  # task type
         self.model_name = None  # model name
         model = str(model).strip()
-
         # Check if Ultralytics HUB model from https://hub.ultralytics.com
         if self.is_hub_model(model):
             # Fetch model from HUB
@@ -142,7 +141,6 @@ class Model(torch.nn.Module):
 
         # Load or create new YOLO model
         __import__("os").environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # to avoid deterministic warnings
-        print(f"model:{model}")
         if Path(model).suffix in {".yaml", ".yml"}:
             self._new(model, task=task, verbose=verbose)
         else:
@@ -258,7 +256,6 @@ class Model(torch.nn.Module):
         self.model = (model or self._smart_load("model"))(cfg_dict, verbose=verbose and RANK == -1)  # build model
         self.overrides["model"] = self.cfg
         self.overrides["task"] = self.task
-
         # Below added to allow export from YAMLs
         self.model.args = {**DEFAULT_CFG_DICT, **self.overrides}  # combine default and model args (prefer model args)
         self.model.task = self.task
@@ -804,7 +801,8 @@ class Model(torch.nn.Module):
 
         self.trainer = (trainer or self._smart_load("trainer"))(cfg=kwargs['cfg'], overrides=args, _callbacks=self.callbacks)
         if not args.get("resume"):  # manually set model only if not resuming
-            self.trainer.model = self.trainer.get_model(weights=self.model if self.ckpt else None, cfg=self.model.yaml)
+            pretrained_ckpt = args.get("pretrained_ckpt", None) if args is not None else None
+            self.trainer.model = self.trainer.get_model(weights=self.model if self.ckpt else None, pretrained_ckpt=pretrained_ckpt, cfg=self.model.yaml)
             self.model = self.trainer.model
 
         self.trainer.hub_session = self.session  # attach optional HUB session

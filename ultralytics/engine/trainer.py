@@ -180,7 +180,6 @@ class BaseTrainer:
             world_size = 1  # default to device 0
         else:  # i.e. device=None or device=''
             world_size = 0
-
         # Run subprocess if DDP training, else train normally
         if world_size > 1 and "LOCAL_RANK" not in os.environ:
             # Argument checks
@@ -585,7 +584,6 @@ class BaseTrainer:
             cfg = weights.yaml
         elif isinstance(self.args.pretrained, (str, Path)):
             weights, _ = attempt_load_one_weight(self.args.pretrained)
-        print(f"cfg1:{cfg}")
         self.model = self.get_model(cfg=cfg, weights=weights, verbose=RANK == -1)  # calls Model(cfg, weights)
         return ckpt
 
@@ -615,7 +613,7 @@ class BaseTrainer:
             self.best_fitness = fitness
         return metrics, fitness
 
-    def get_model(self, cfg=None, weights=None, verbose=True):
+    def get_model(self, cfg=None, pretrained_ckpt=None, weights=None, verbose=True):
         """Get model and raise NotImplementedError for loading cfg files."""
         raise NotImplementedError("This task trainer doesn't support loading cfg files")
 
