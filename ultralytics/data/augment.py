@@ -2076,7 +2076,7 @@ class Format:
         if self.return_mask:
             # w, h --> h, w
             labels["segments"] = torch.from_numpy(instances.segments)
-            labels["masks"] = labels["segments"].permute(0, 2, 1)
+            labels["masks"] = labels["segments"]
 
         labels["img"] = self._format_img(img)
         if gt is not None:
