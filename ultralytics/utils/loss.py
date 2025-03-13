@@ -504,7 +504,7 @@ class v8SegmentationLoss(v8DetectionLoss):
                     pmask_anchor = self.extract_mask_by_anchor(pred_masks_i, target_label_i[mask_idx])
                     loss += self.comb_mask_loss(mask_gti_anchor, pmask_anchor, mxyxy_i[fg_mask_i], marea_i[fg_mask_i])
                 else:
-                    loss += self.single_mask_loss(gt_mask, pred_masks_i[mask_idx], proto_i, mxyxy_i[fg_mask_i], marea_i[fg_mask_i])
+                    loss += self.single_mask_loss(gt_mask, pred_masks_i[fg_mask_i], proto_i, mxyxy_i[fg_mask_i], marea_i[fg_mask_i])
 
             # WARNING: lines below prevents Multi-GPU DDP 'unused gradient' PyTorch errors, do not remove
             else:
