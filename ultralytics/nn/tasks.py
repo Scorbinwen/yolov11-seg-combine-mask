@@ -409,7 +409,8 @@ class SegmentationModel(DetectionModel):
 
     def init_criterion(self):
         """Initialize the loss criterion for the SegmentationModel."""
-        return v8SegmentationLoss(self)
+        combine_mask = self.model[-1].combine_mask
+        return v8SegmentationLoss(self, combine_mask=combine_mask)
 
 
 class PoseModel(DetectionModel):

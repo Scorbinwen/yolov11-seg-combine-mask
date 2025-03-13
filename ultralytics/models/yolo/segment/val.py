@@ -13,7 +13,6 @@ from ultralytics.utils.checks import check_requirements
 from ultralytics.utils.metrics import SegmentMetrics, box_iou, mask_iou
 from ultralytics.utils.plotting import output_to_target, plot_images
 
-
 class SegmentationValidator(DetectionValidator):
     """
     A class extending the DetectionValidator class for validation based on a segmentation model.
@@ -34,6 +33,7 @@ class SegmentationValidator(DetectionValidator):
         self.plot_masks = None
         self.process = None
         self.args.task = "segment"
+        self.combine_mask = True if self.args.combine_mask else False
         self.metrics = SegmentMetrics(save_dir=self.save_dir, on_plot=self.on_plot)
 
     def preprocess(self, batch):
@@ -70,8 +70,16 @@ class SegmentationValidator(DetectionValidator):
 
     def postprocess(self, preds):
         """Post-processes YOLO predictions and returns output detections with proto."""
-        p = super().postprocess(preds[0])
-        proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]  # second output is len 3 if pt, but only 1 if exported
+        if isinstance(preds[1], tuple) and len(preds[1]) == 2:
+            pred, proto, mask_pred = preds[0], preds[1][1], preds[2]
+        else:
+            pred, proto, mask_pred = preds[0], preds[1], preds[2]
+
+        if not self.combine_mask:
+            pred = torch.cat((pred, mask_pred), dim=1)
+        p = super().postprocess(pred)
+        if self.combine_mask:
+            p = (p, mask_pred)
         return p, proto
 
     def _prepare_batch(self, si, batch):
@@ -83,13 +91,26 @@ class SegmentationValidator(DetectionValidator):
 
     def _prepare_pred(self, pred, pbatch, proto):
         """Prepares a batch for training or inference by processing images and targets."""
-        predn = super()._prepare_pred(pred, pbatch)
-        pred_masks = self.process(proto, pred[:, 6:], pred[:, :4], shape=pbatch["imgsz"])
+        if self.combine_mask:
+            _pred, pred_combine_mask = pred
+        else:
+            _pred = pred
+        predn = super()._prepare_pred(_pred, pbatch)
+
+        if not self.combine_mask:
+            pred_masks = self.process(proto, _pred[:, 6:], _pred[:, :4], shape=pbatch["imgsz"])
+        else:
+            pred_masks = ops.process_combine_mask(pred_combine_mask, _pred[:, 5], _pred[:, :4], shape=pbatch["imgsz"])
+
         return predn, pred_masks
 
     def update_metrics(self, preds, batch):
         """Metrics."""
-        for si, (pred, proto) in enumerate(zip(preds[0], preds[1])):
+        if self.combine_mask:
+            (_preds, pred_combine_masks), protos = preds[0], preds[1]
+        else:
+            _preds, protos = preds[0], preds[1]
+        for si, (pred, proto) in enumerate(zip(_preds, protos)):
             self.seen += 1
             npr = len(pred)
             stat = dict(
@@ -116,6 +137,9 @@ class SegmentationValidator(DetectionValidator):
             # Predictions
             if self.args.single_cls:
                 pred[:, 5] = 0
+
+            if self.combine_mask:
+                pred = (pred, pred_combine_masks[si])
             predn, pred_masks = self._prepare_pred(pred, pbatch, proto)
             stat["conf"] = predn[:, 4]
             stat["pred_cls"] = predn[:, 5]

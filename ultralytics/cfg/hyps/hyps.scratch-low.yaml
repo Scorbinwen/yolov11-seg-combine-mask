@@ -8,6 +8,7 @@ mode: train # (str) YOLO mode, i.e. train, val, predict, export, track, benchmar
 
 # Train settings -------------------------------------------------------------------------------------------------------
 model: ../ultralytics/cfg/models/11/yolo11-seg.yaml # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml
+combine_mask: False
 data: ../ultralytics/cfg/datasets/neiceng_40cls.yaml # (str, optional) path to data file, i.e. coco8.yaml
 usegt: True
 epochs: 100 # (int) number of epochs to train for

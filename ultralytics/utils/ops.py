@@ -248,7 +248,6 @@ def non_max_suppression(
     nm = prediction.shape[1] - nc - 4  # number of masks
     mi = 4 + nc  # mask start index
     xc = prediction[:, 4:mi].amax(1) > conf_thres  # candidates
-
     # Settings
     # min_wh = 2  # (pixels) minimum box width and height
     time_limit = 2.0 + max_time_img * bs  # seconds to quit after
@@ -701,6 +700,32 @@ def process_mask(protos, masks_in, bboxes, shape, upsample=False):
         masks = F.interpolate(masks[None], shape, mode="bilinear", align_corners=False)[0]  # CHW
     return masks.gt_(0.0)
 
+def process_combine_mask(protos, pred_classes, pred_bboxes, shape, upsample=False):
+    """
+    Crop before upsample.
+    protos: [num_classes, mask_h, mask_w]  num_classes * 80 * 80
+    pred_classes: [n],  n is number of bboxes after nms
+    pred_bboxes: [n, 4], n is number of bboxes after nms
+    shape:input_image_size, (h, w)
+
+    return: h, w, n
+    """
+
+    c, mh, mw = protos.shape  # CHW
+    ih, iw = shape
+    classes_ind = pred_classes.clone().to(torch.int32)
+    masks = protos[classes_ind].sigmoid().view(-1, mh, mw)  # CHW
+
+    downsampled_bboxes = pred_bboxes.clone()
+    downsampled_bboxes[:, 0] *= mw / iw
+    downsampled_bboxes[:, 2] *= mw / iw
+    downsampled_bboxes[:, 3] *= mh / ih
+    downsampled_bboxes[:, 1] *= mh / ih
+
+    masks = crop(masks, downsampled_bboxes)  # CHW
+    if upsample:
+        masks = F.interpolate(masks[None], shape, mode='bilinear', align_corners=False)[0]  # CHW
+    return masks.gt_(0.5)  # threshold
 
 def process_mask_native(protos, masks_in, bboxes, shape):
     """

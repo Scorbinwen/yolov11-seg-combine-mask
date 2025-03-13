@@ -108,6 +108,7 @@ class BaseValidator:
     @smart_inference_mode()
     def __call__(self, trainer=None, model=None):
         """Executes validation process, running inference on dataloader and computing performance metrics."""
+        print("validate")
         self.training = trainer is not None
         augment = self.args.augment and (not self.training)
         if self.training:
@@ -193,7 +194,6 @@ class BaseValidator:
             # Postprocess
             with dt[3]:
                 preds = self.postprocess(preds)
-
             self.update_metrics(preds, batch)
             if self.args.plots and batch_i < 3:
                 self.plot_val_samples(batch, batch_i)

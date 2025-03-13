@@ -12,7 +12,6 @@ from ultralytics.utils.torch_utils import autocast
 from .metrics import bbox_iou, probiou
 from .tal import bbox2dist
 
-
 class VarifocalLoss(nn.Module):
     """
     Varifocal loss by Zhang et al.
@@ -266,15 +265,20 @@ class v8DetectionLoss:
 class v8SegmentationLoss(v8DetectionLoss):
     """Criterion class for computing training losses."""
 
-    def __init__(self, model):  # model must be de-paralleled
+    def __init__(self, model, combine_mask=False):  # model must be de-paralleled
         """Initializes the v8SegmentationLoss class, taking a de-paralleled model as argument."""
         super().__init__(model)
+        self.combine_mask = combine_mask
         self.overlap = model.args.overlap_mask
 
     def __call__(self, preds, batch):
         """Calculate and return the loss for the YOLO model."""
         loss = torch.zeros(4, device=self.device)  # box, cls, dfl
-        feats, pred_masks, proto = preds if len(preds) == 3 else preds[1]
+        if isinstance(preds[1], tuple) and len(preds[1]) == 2: # validation phase
+            (feats, proto), pred_masks = preds[1], preds[2]
+        else: # training phase
+            feats, proto, pred_masks = preds
+
         batch_size, _, mask_h, mask_w = proto.shape  # batch size, number of masks, mask height, mask width
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
             (self.reg_max * 4, self.nc), 1
@@ -283,7 +287,14 @@ class v8SegmentationLoss(v8DetectionLoss):
         # B, grids, ..
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         pred_distri = pred_distri.permute(0, 2, 1).contiguous()
-        pred_masks = pred_masks.permute(0, 2, 1).contiguous()
+        if self.combine_mask:
+            assert pred_masks.dim() == 4, "pred_masks should be of dim 4 in combine_mask mode"
+            # pred_masks shape:[BS, num_classes, H, W]
+            pred_masks = pred_masks.permute(0, 1, 2, 3).contiguous()
+        else:
+            # pred_masks shape:[BS, num_anchors, nm]q
+            assert pred_masks.dim() == 3, "pred_masks should be of dim 3 in non-combine_mask mode"
+            pred_masks = pred_masks.permute(0, 2, 1).contiguous()
 
         dtype = pred_scores.dtype
         imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
@@ -308,7 +319,7 @@ class v8SegmentationLoss(v8DetectionLoss):
         # Pboxes
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
 
-        _, target_bboxes, target_scores, fg_mask, target_gt_idx = self.assigner(
+        target_labels, target_bboxes, target_scores, fg_mask, target_gt_idx = self.assigner(
             pred_scores.detach().sigmoid(),
             (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
             anchor_points * stride_tensor,
@@ -340,7 +351,7 @@ class v8SegmentationLoss(v8DetectionLoss):
                 masks = F.interpolate(masks[None], (mask_h, mask_w), mode="nearest")[0]
 
             loss[1] = self.calculate_segmentation_loss(
-                fg_mask, masks, target_gt_idx, target_bboxes, batch_idx, proto, pred_masks, imgsz, self.overlap
+                fg_mask, masks, target_gt_idx, target_bboxes, target_labels, batch_idx, proto, pred_masks, imgsz, self.overlap
             )
 
         # WARNING: lines below prevent Multi-GPU DDP 'unused gradient' PyTorch errors, do not remove
@@ -353,6 +364,51 @@ class v8SegmentationLoss(v8DetectionLoss):
         loss[3] *= self.hyp.dfl  # dfl gain
 
         return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)
+
+    def combine_mask_by_class(self, mask_gti, tcls, pmask):
+        """
+        combine masks by class
+        Args:
+            mask_gti: (torch.Tensor) [max_num_gt, mask_h, mask_w]
+            tcls: (torch.Tensor) [max_num_gt]
+            pmask: (torch.Tensor) [num_classes, mask_h, mask_w]
+
+        Returns:
+            mask_gt_cls: (torch.Tensor) [num_classes, mask_h, mask_w]
+
+        """
+        cls_ind = (torch.arange(0, pmask.shape[0], device=mask_gti.device)[:, None] == tcls[None, :]).to(dtype=mask_gti.dtype)
+        mask_gt_cls = torch.clamp(torch.einsum('bi,ijk->bjk', cls_ind, mask_gti), min=0, max=1)
+        return mask_gt_cls
+
+    def extract_mask_by_anchor(self, masks, tcls):
+        """
+        Extract masks by class
+        Args:
+            masks: (torch.Tensor) masks of shape (num_classes, height, width)
+            tcls: (torch.Tensor) target classes of shape (max_num_gt, )
+
+        Returns:
+            mask_anchor: (torch.Tensor) masks of shape (max_num_gt, height, width)
+
+        """
+        mask_anchor = masks[tcls]
+        return mask_anchor
+
+    def comb_mask_loss(self, gt_mask, pred_mask, xyxy, area):
+        """
+        Calculate the combined mask loss between ground truth and predicted masks.
+        Args:
+            gt_mask (torch.Tensor): Ground truth masks of shape (max_num_gt, height, width).
+            pred_mask (torch.Tensor): Predicted masks of shape (max_num_gt, height, width).
+            xyxy (torch.Tensor): Bounding box coordinates of shape (max_num_gt, 4).
+            area (torch.Tensor): Bounding box coordinates of shape (max_num_gt, 4).
+        Returns:
+            torch.Tensor: Combined mask loss.
+        """
+        # Mask loss for one image
+        loss = F.binary_cross_entropy_with_logits(pred_mask, gt_mask, reduction="none")
+        return (crop_mask(loss, xyxy).mean(dim=(1, 2)) / area).mean()
 
     @staticmethod
     def single_mask_loss(
@@ -385,6 +441,7 @@ class v8SegmentationLoss(v8DetectionLoss):
         masks: torch.Tensor,
         target_gt_idx: torch.Tensor,
         target_bboxes: torch.Tensor,
+        target_labels: torch.Tensor,
         batch_idx: torch.Tensor,
         proto: torch.Tensor,
         pred_masks: torch.Tensor,
@@ -399,9 +456,14 @@ class v8SegmentationLoss(v8DetectionLoss):
             masks (torch.Tensor): Ground truth masks of shape (BS, H, W) if `overlap` is False, otherwise (BS, ?, H, W).
             target_gt_idx (torch.Tensor): Indexes of ground truth objects for each anchor of shape (BS, N_anchors).
             target_bboxes (torch.Tensor): Ground truth bounding boxes for each anchor of shape (BS, N_anchors, 4).
+            target_labels: (torch.Tensor): Ground truth labels for each anchor of shape (BS, N_anchors).
             batch_idx (torch.Tensor): Batch indices of shape (N_labels_in_batch, 1).
             proto (torch.Tensor): Prototype masks of shape (BS, 32, H, W).
-            pred_masks (torch.Tensor): Predicted masks for each anchor of shape (BS, N_anchors, 32).
+            pred_masks (torch.Tensor):
+                if combine_mask:
+                    Predicted masks for each anchor of shape (BS, N_anchors, 32).
+                else:
+                    Predicted masks for each anchor of shape (BS, num_classes, H, W).
             imgsz (torch.Tensor): Size of the input image as a tensor of shape (2), i.e., (H, W).
             overlap (bool): Whether the masks in `masks` tensor overlap.
 
@@ -425,8 +487,8 @@ class v8SegmentationLoss(v8DetectionLoss):
         # Normalize to mask size
         mxyxy = target_bboxes_normalized * torch.tensor([mask_w, mask_h, mask_w, mask_h], device=proto.device)
 
-        for i, single_i in enumerate(zip(fg_mask, target_gt_idx, pred_masks, proto, mxyxy, marea, masks)):
-            fg_mask_i, target_gt_idx_i, pred_masks_i, proto_i, mxyxy_i, marea_i, masks_i = single_i
+        for i, single_i in enumerate(zip(fg_mask, target_gt_idx, target_labels, pred_masks, proto, mxyxy, marea, masks)):
+            fg_mask_i, target_gt_idx_i, target_label_i, pred_masks_i, proto_i, mxyxy_i, marea_i, masks_i = single_i
             if fg_mask_i.any():
                 mask_idx = target_gt_idx_i[fg_mask_i]
                 if overlap:
@@ -435,9 +497,14 @@ class v8SegmentationLoss(v8DetectionLoss):
                 else:
                     gt_mask = masks[batch_idx.view(-1) == i][mask_idx]
 
-                loss += self.single_mask_loss(
-                    gt_mask, pred_masks_i[fg_mask_i], proto_i, mxyxy_i[fg_mask_i], marea_i[fg_mask_i]
-                )
+                if self.combine_mask:
+                    # merge mask for mask_gti
+                    mask_gti_cls = self.combine_mask_by_class(gt_mask, target_label_i[mask_idx], pred_masks_i)
+                    mask_gti_anchor = self.extract_mask_by_anchor(mask_gti_cls, target_label_i[mask_idx])
+                    pmask_anchor = self.extract_mask_by_anchor(pred_masks_i, target_label_i[mask_idx])
+                    loss += self.comb_mask_loss(mask_gti_anchor, pmask_anchor, mxyxy_i[fg_mask_i], marea_i[fg_mask_i])
+                else:
+                    loss += self.single_mask_loss(gt_mask, pred_masks_i[mask_idx], proto_i, mxyxy_i[fg_mask_i], marea_i[fg_mask_i])
 
             # WARNING: lines below prevents Multi-GPU DDP 'unused gradient' PyTorch errors, do not remove
             else:

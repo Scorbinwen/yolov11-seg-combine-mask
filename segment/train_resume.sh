@@ -1,0 +1,1 @@
+python train.py --model ../runs/train9/weights/best.pt --resume True --device "0,1" --save_period 10 --epochs 600 --batch 32
