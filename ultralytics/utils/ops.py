@@ -714,7 +714,7 @@ def process_combine_mask(protos, pred_classes, pred_bboxes, shape, upsample=Fals
     c, mh, mw = protos.shape  # CHW
     ih, iw = shape
     classes_ind = pred_classes.clone().to(torch.int32)
-    masks = protos[classes_ind].sigmoid().view(-1, mh, mw)  # CHW
+    masks = protos[classes_ind].view(-1, mh, mw)  # CHW
 
     downsampled_bboxes = pred_bboxes.clone()
     downsampled_bboxes[:, 0] *= mw / iw
@@ -725,7 +725,7 @@ def process_combine_mask(protos, pred_classes, pred_bboxes, shape, upsample=Fals
     masks = crop(masks, downsampled_bboxes)  # CHW
     if upsample:
         masks = F.interpolate(masks[None], shape, mode='bilinear', align_corners=False)[0]  # CHW
-    return masks.gt_(0.5)  # threshold
+    return masks.gt_(0.0)  # threshold
 
 def process_mask_native(protos, masks_in, bboxes, shape):
     """
