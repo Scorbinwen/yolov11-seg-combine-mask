@@ -37,7 +37,6 @@ class SegmentationTrainer(yolo.detect.DetectionTrainer):
         elif pretrained_ckpt:
             ckpt = torch.load(pretrained_ckpt, map_location='cpu')
             model.load(ckpt)
-
         return model
 
     def get_validator(self):

@@ -1,0 +1,1 @@
+python train.py --pretrained_ckpt ../runs/train45/weights/best.pt --model ../ultralytics/cfg/models/11/yolo11-seg-combine_mask.yaml --data ../ultralytics/cfg/datasets/neiceng_40cls_single.yaml --combine_mask True --device "0" --save_period 10 --epochs 600 --batch 1

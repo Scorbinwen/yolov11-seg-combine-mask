@@ -1,0 +1,1 @@
+python train.py --model ../runs/train45/weights/epoch140.pt --resume True --combine_mask True --device "0,1" --save_period 10 --epochs 600 --batch 32

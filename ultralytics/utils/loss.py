@@ -408,7 +408,7 @@ class v8SegmentationLoss(v8DetectionLoss):
         """
         # Mask loss for one image
         loss = F.binary_cross_entropy_with_logits(pred_mask, gt_mask, reduction="none")
-        return (crop_mask(loss, xyxy).mean(dim=(1, 2)) / area).mean()
+        return (crop_mask(loss, xyxy).mean(dim=(1, 2)) / area).sum()
 
     @staticmethod
     def single_mask_loss(
@@ -499,16 +499,18 @@ class v8SegmentationLoss(v8DetectionLoss):
 
                 if self.combine_mask:
                     # merge mask for mask_gti
-                    mask_gti_cls = self.combine_mask_by_class(gt_mask, target_label_i[mask_idx], pred_masks_i)
-                    mask_gti_anchor = self.extract_mask_by_anchor(mask_gti_cls, target_label_i[mask_idx])
-                    pmask_anchor = self.extract_mask_by_anchor(pred_masks_i, target_label_i[mask_idx])
+                    mask_gti_cls = self.combine_mask_by_class(gt_mask, target_label_i[fg_mask_i], pred_masks_i)
+                    mask_gti_anchor = self.extract_mask_by_anchor(mask_gti_cls, target_label_i[fg_mask_i])
+                    pmask_anchor = self.extract_mask_by_anchor(pred_masks_i, target_label_i[fg_mask_i])
                     loss += self.comb_mask_loss(mask_gti_anchor, pmask_anchor, mxyxy_i[fg_mask_i], marea_i[fg_mask_i])
                 else:
                     loss += self.single_mask_loss(gt_mask, pred_masks_i[fg_mask_i], proto_i, mxyxy_i[fg_mask_i], marea_i[fg_mask_i])
 
+
             # WARNING: lines below prevents Multi-GPU DDP 'unused gradient' PyTorch errors, do not remove
             else:
                 loss += (proto * 0).sum() + (pred_masks * 0).sum()  # inf sums may lead to nan loss
+
 
         return loss / fg_mask.sum()
 

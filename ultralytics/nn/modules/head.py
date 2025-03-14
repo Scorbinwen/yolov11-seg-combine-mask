@@ -181,13 +181,12 @@ class Segment(Detect):
         self.npr = npr  # number of protos
         self.combine_mask = combine_mask
         self.nc = nc
+        self.proto = Proto(ch[0], self.npr, nm)  # protos
         if self.combine_mask:
             self.mask_pred = nn.Conv2d(nm, nc, 1)
             self.nm = 0 # number of masks in detect output
         else:
             self.nm = nm # number of masks in detect output
-
-        self.proto = Proto(ch[0], self.npr, self.nm)  # protos
 
         if not self.combine_mask:
             c4 = max(ch[0] // 4, self.nm)
