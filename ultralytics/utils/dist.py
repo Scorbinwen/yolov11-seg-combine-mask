@@ -31,6 +31,7 @@ def generate_ddp_file(trainer):
 import signal
 from pathlib import Path
 import sys
+import torch
 def handler(signum, frame):
     # 终止整个进程组
     print(f'[SIGINT] Terminating process group...')

@@ -108,7 +108,6 @@ class BaseValidator:
     @smart_inference_mode()
     def __call__(self, trainer=None, model=None):
         """Executes validation process, running inference on dataloader and computing performance metrics."""
-        print("validate")
         self.training = trainer is not None
         augment = self.args.augment and (not self.training)
         if self.training:
