@@ -1,0 +1,1 @@
+python val.py --device "0" --model ../runs/train18/weights/last.pt
