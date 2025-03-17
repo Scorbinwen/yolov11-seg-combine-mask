@@ -1,0 +1,1 @@
+python predictor.py --device "0" --model ../runs/train18/weights/last.pt --source /workspace/data/neiceng/gt_mangkong --mode "predict"

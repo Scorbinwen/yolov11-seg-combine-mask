@@ -407,6 +407,8 @@ class Annotator:
             self.im = np.asarray(self.im).copy()
         if len(masks) == 0:
             self.im[:] = im_gpu.permute(1, 2, 0).contiguous().cpu().numpy() * 255
+
+        im_gpu = im_gpu[:3, ...] # for usegt case
         if im_gpu.device != masks.device:
             im_gpu = im_gpu.to(masks.device)
         colors = torch.tensor(colors, device=masks.device, dtype=torch.float32) / 255.0  # shape(n,3)

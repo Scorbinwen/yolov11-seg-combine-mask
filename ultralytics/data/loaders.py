@@ -320,7 +320,7 @@ class LoadImagesAndVideos:
         - Can read from a text file containing paths to images and videos.
     """
 
-    def __init__(self, path, batch=1, vid_stride=1):
+    def __init__(self, path, batch=1, vid_stride=1, usegt=False):
         """Initialize dataloader for images and videos, supporting various input formats."""
         parent = None
         if isinstance(path, str) and Path(path).suffix == ".txt":  # *.txt file with img/vid/dir on each line
@@ -344,7 +344,8 @@ class LoadImagesAndVideos:
         images, videos = [], []
         for f in files:
             suffix = f.split(".")[-1].lower()  # Get file extension without the dot and lowercase
-            if suffix in IMG_FORMATS:
+            stem = Path(f).stem  # Get file name without extension
+            if suffix in IMG_FORMATS and not stem.endswith("_gt"):
                 images.append(f)
             elif suffix in VID_FORMATS:
                 videos.append(f)
@@ -357,6 +358,7 @@ class LoadImagesAndVideos:
         self.mode = "video" if ni == 0 else "image"  # default to video if no images
         self.vid_stride = vid_stride  # video frame-rate stride
         self.bs = batch
+        self.usegt = usegt
         if any(videos):
             self._new_video(videos[0])  # new video
         else:
@@ -371,7 +373,7 @@ class LoadImagesAndVideos:
 
     def __next__(self):
         """Returns the next batch of images or video frames with their paths and metadata."""
-        paths, imgs, info = [], [], []
+        paths, imgs, gts, info = [], [], [], []
         while len(imgs) < self.bs:
             if self.count >= self.nf:  # end of file list
                 if imgs:
@@ -411,6 +413,8 @@ class LoadImagesAndVideos:
             else:
                 # Handle image files (including HEIC)
                 self.mode = "image"
+                if self.usegt:
+                    gt_path = str(Path(path).with_stem(Path(path).stem + "_gt"))
                 if path.split(".")[-1].lower() == "heic":
                     # Load HEIC image using Pillow with pillow-heif
                     check_requirements("pillow-heif")
@@ -420,8 +424,18 @@ class LoadImagesAndVideos:
                     register_heif_opener()  # Register HEIF opener with Pillow
                     with Image.open(path) as img:
                         im0 = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)  # convert image to BGR nparray
+                    if self.usegt:
+                        with Image.open(gt_path) as img_gt:
+                            img_gt = cv2.cvtColor(np.asarray(img_gt), cv2.COLOR_RGB2BGR)
                 else:
                     im0 = imread(path)  # BGR
+                    if self.usegt:
+                        img_gt = imread(gt_path)
+
+                assert im0.shape == img_gt.shape, "shape of img_gt should be the same with im0."
+                if self.usegt:
+                    gts.append(img_gt)
+
                 if im0 is None:
                     LOGGER.warning(f"WARNING ⚠️ Image Read Error {path}")
                 else:
@@ -432,7 +446,7 @@ class LoadImagesAndVideos:
                 if self.count >= self.ni:  # end of image list
                     break
 
-        return paths, imgs, info
+        return paths, imgs, gts, info
 
     def _new_video(self, path):
         """Creates a new video capture object for the given path and initializes video-related attributes."""

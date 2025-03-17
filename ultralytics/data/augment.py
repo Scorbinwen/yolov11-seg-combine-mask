@@ -1548,7 +1548,7 @@ class LetterBox:
         self.stride = stride
         self.center = center  # Put the image in the middle or top-left
 
-    def __call__(self, labels=None, image=None):
+    def __call__(self, labels=None, image=None, mode="train"):
         """
         Resizes and pads an image for object detection, instance segmentation, or pose estimation tasks.
 
@@ -1616,7 +1616,8 @@ class LetterBox:
             labels["ratio_pad"] = (labels["ratio_pad"], (left, top))  # for evaluation
 
         if len(labels):
-            labels = self._update_labels(labels, ratio, left, top)
+            if mode == "train":
+                labels = self._update_labels(labels, ratio, left, top)
             labels["img"] = img
             if gt is not None:
                 labels["gt"] = gt

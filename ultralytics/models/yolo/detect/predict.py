@@ -39,7 +39,7 @@ class DetectionPredictor(BasePredictor):
 
         return self.construct_results(preds, img, orig_imgs, **kwargs)
 
-    def construct_results(self, preds, img, orig_imgs):
+    def construct_results(self, preds, img, orig_imgs, mask_pred=None):
         """
         Constructs a list of result objects from the predictions.
 
@@ -56,7 +56,7 @@ class DetectionPredictor(BasePredictor):
             for pred, orig_img, img_path in zip(preds, orig_imgs, self.batch[0])
         ]
 
-    def construct_result(self, pred, img, orig_img, img_path):
+    def construct_result(self, pred, img, orig_img, img_path, mask_pred=None):
         """
         Constructs the result object from the prediction.
 
