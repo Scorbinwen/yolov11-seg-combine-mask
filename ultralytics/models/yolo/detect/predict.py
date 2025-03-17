@@ -20,7 +20,7 @@ class DetectionPredictor(BasePredictor):
         ```
     """
 
-    def postprocess(self, preds, img, orig_imgs, **kwargs):
+    def postprocess(self, preds, img, orig_imgs, protos, **kwargs):
         """Post-processes predictions and returns a list of Results objects."""
         preds = ops.non_max_suppression(
             preds,
@@ -37,9 +37,9 @@ class DetectionPredictor(BasePredictor):
         if not isinstance(orig_imgs, list):  # input images are a torch.Tensor, not a list
             orig_imgs = ops.convert_torch2numpy_batch(orig_imgs)
 
-        return self.construct_results(preds, img, orig_imgs, **kwargs)
+        return self.construct_results(preds, img, orig_imgs, protos, **kwargs)
 
-    def construct_results(self, preds, img, orig_imgs, mask_pred=None):
+    def construct_results(self, preds, img, orig_imgs, protos=None, mask_pred=None, gts=None):
         """
         Constructs a list of result objects from the predictions.
 
@@ -56,7 +56,7 @@ class DetectionPredictor(BasePredictor):
             for pred, orig_img, img_path in zip(preds, orig_imgs, self.batch[0])
         ]
 
-    def construct_result(self, pred, img, orig_img, img_path, mask_pred=None):
+    def construct_result(self, pred, img, orig_img, img_path, mask_pred=None, gt=None):
         """
         Constructs the result object from the prediction.
 

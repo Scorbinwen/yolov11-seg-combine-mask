@@ -177,7 +177,7 @@ class BasePredictor:
 
         return [letterbox(labels={"img": img, "gt": gt}, mode="predict") for img, gt in zip(imgs, gts)]
 
-    def postprocess(self, preds, img, orig_imgs):
+    def postprocess(self, preds, img, orig_imgs, gts=None):
         """Post-processes predictions for an image and returns them."""
         return preds
 
@@ -282,7 +282,7 @@ class BasePredictor:
 
                 # Postprocess
                 with profilers[2]:
-                    self.results = self.postprocess(preds, im, im0s)
+                    self.results = self.postprocess(preds, im, im0s, gts=gts)
                 self.run_callbacks("on_predict_postprocess_end")
 
                 # Visualize, save, write results
@@ -375,6 +375,10 @@ class BasePredictor:
         if self.args.show:
             self.show(str(p))
         if self.args.save:
+            if self.args.usegt:
+                cv2.imwrite(str(self.save_dir / p.name.replace(".png", "_gt.png").replace(".jpg", "_gt.jpg")), result.gt)  # save to JPG for best support
+            cv2.imwrite(str(self.save_dir / p.name.replace(".png", "_ori.png").replace(".jpg", "_ori.jpg")),
+                        result.orig_img)  # save to JPG for best support
             self.save_predicted_images(str(self.save_dir / p.name), frame)
 
         return string

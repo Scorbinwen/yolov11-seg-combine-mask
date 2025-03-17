@@ -26,7 +26,7 @@ class SegmentationPredictor(DetectionPredictor):
         self.args.task = "segment"
         self.combine_mask = True if self.args.combine_mask else False
 
-    def postprocess(self, preds, img, orig_imgs):
+    def postprocess(self, preds, img, orig_imgs, **kwargs):
         """Applies non-max suppression and processes detections for each image in an input batch."""
         if isinstance(preds[1], tuple) and len(preds[1]) == 2:
             pred, proto, mask_pred = preds[0], preds[1][1], preds[2]
@@ -36,9 +36,9 @@ class SegmentationPredictor(DetectionPredictor):
         if not self.combine_mask:
             pred = torch.cat((pred, mask_pred), dim=1)
 
-        return super().postprocess(pred, img, orig_imgs, mask_preds=mask_pred if self.combine_mask else None, protos=proto)
+        return super().postprocess(pred, img, orig_imgs, mask_preds=mask_pred if self.combine_mask else None, protos=proto, **kwargs)
 
-    def construct_results(self, preds, img, orig_imgs, protos, mask_preds=None):
+    def construct_results(self, preds, img, orig_imgs, protos, mask_preds=None, gts=None):
         """
         Constructs a list of result objects from the predictions.
 
@@ -46,6 +46,7 @@ class SegmentationPredictor(DetectionPredictor):
             preds (List[torch.Tensor]): List of predicted bounding boxes, scores, and masks.
             img (torch.Tensor): The image after preprocessing.
             orig_imgs (List[np.ndarray]): List of original images before preprocessing.
+            gts (List[torch.Tensor]): List of gt images.
             protos (List[torch.Tensor]): List of prototype masks.
             mask_pred(List[torch.Tensor]): List of predicted masks (optional).
                 not None if self.combine_mask is True.
@@ -55,17 +56,24 @@ class SegmentationPredictor(DetectionPredictor):
         """
         assert (mask_preds is not None) == self.combine_mask, "mask_preds should be None if self.combine_mask is False, or vise versa."
         if self.combine_mask:
-            return [
-                self.construct_result(pred, img, orig_img, img_path, proto, mask_pred)
-                for pred, orig_img, img_path, proto, mask_pred in zip(preds, orig_imgs, self.batch[0], protos, mask_preds)
-            ]
+            if self.args.usegt:
+                return [
+                    self.construct_result(pred, img, orig_img, img_path, proto, mask_pred, gt)
+                    for pred, orig_img, gt, img_path, proto, mask_pred in
+                    zip(preds, orig_imgs, gts, self.batch[0], protos, mask_preds)
+                ]
+            else:
+                return [
+                    self.construct_result(pred, img, orig_img, img_path, proto, mask_pred)
+                    for pred, orig_img, img_path, proto, mask_pred in zip(preds, orig_imgs, self.batch[0], protos, mask_preds)
+                ]
         else:
             return [
                 self.construct_result(pred, img, orig_img, img_path, proto)
                 for pred, orig_img, img_path, proto in zip(preds, orig_imgs, self.batch[0], protos)
             ]
 
-    def construct_result(self, pred, img, orig_img, img_path, proto, mask_pred=None):
+    def construct_result(self, pred, img, orig_img, img_path, proto, mask_pred=None, gt=None):
         """
         Constructs the result object from the prediction.
 
@@ -74,6 +82,7 @@ class SegmentationPredictor(DetectionPredictor):
                 p, mask_pred if combine_mask else p
             img (torch.Tensor): The image after preprocessing.
             orig_img (np.ndarray): The original image before preprocessing.
+            gt (np.ndarray): The gt image.
             img_path (str): The path to the original image.
             proto (torch.Tensor): The prototype masks.
             mask_pred (torch.Tensor): The predicted masks (optional).
@@ -93,4 +102,4 @@ class SegmentationPredictor(DetectionPredictor):
         else:
             masks = ops.process_combine_mask(mask_pred, pred[:, 5], pred[:, :4], img.shape[2:], upsample=True)  # HWC
             pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
-        return Results(orig_img, path=img_path, names=self.model.names, boxes=pred[:, :6], masks=masks)
+        return Results(orig_img, gt, path=img_path, names=self.model.names, boxes=pred[:, :6], masks=masks)

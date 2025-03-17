@@ -723,7 +723,7 @@ def process_combine_mask(protos, pred_classes, pred_bboxes, shape, upsample=Fals
     downsampled_bboxes[:, 1] *= mh / ih
 
     masks = crop_mask(masks, downsampled_bboxes)  # CHW
-    if upsample:
+    if upsample and len(masks):
         masks = F.interpolate(masks[None], shape, mode='bilinear', align_corners=False)[0]  # CHW
     return masks.gt_(0.0)  # threshold
 

@@ -1,1 +1,1 @@
-python predictor.py --device "0" --model ../runs/train18/weights/last.pt --source /workspace/data/neiceng/gt_mangkong --mode "predict"
+python predictor.py --device "0" --model ../runs/train45/weights/last.pt --combine_mask True --source /workspace/data/neiceng/gt_mangkong --mode "predict"

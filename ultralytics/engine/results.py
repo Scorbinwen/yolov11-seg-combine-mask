@@ -228,7 +228,7 @@ class Results(SimpleClass):
     """
 
     def __init__(
-        self, orig_img, path, names, boxes=None, masks=None, probs=None, keypoints=None, obb=None, speed=None
+        self, orig_img, gt, path, names, boxes=None, masks=None, probs=None, keypoints=None, obb=None, speed=None
     ) -> None:
         """
         Initialize the Results class for storing and manipulating inference results.
@@ -258,6 +258,7 @@ class Results(SimpleClass):
             13: Left Knee, 14: Right Knee, 15: Left Ankle, 16: Right Ankle
         """
         self.orig_img = orig_img
+        self.gt = gt
         self.orig_shape = orig_img.shape[:2]
         self.boxes = Boxes(boxes, self.orig_shape) if boxes is not None else None  # native size boxes
         self.masks = Masks(masks, self.orig_shape) if masks is not None else None  # native size or imgsz masks

@@ -405,10 +405,15 @@ class Annotator:
         if self.pil:
             # Convert to numpy first
             self.im = np.asarray(self.im).copy()
+
+
         if len(masks) == 0:
             self.im[:] = im_gpu.permute(1, 2, 0).contiguous().cpu().numpy() * 255
 
+        if im_gpu.shape[0] == 4:
+            self.gt = np.tile(im_gpu[-1, ...][None, ...].permute(1, 2, 0).contiguous().cpu().numpy() * 255, (3, 1, 1))
         im_gpu = im_gpu[:3, ...] # for usegt case
+
         if im_gpu.device != masks.device:
             im_gpu = im_gpu.to(masks.device)
         colors = torch.tensor(colors, device=masks.device, dtype=torch.float32) / 255.0  # shape(n,3)
@@ -428,6 +433,7 @@ class Annotator:
         if self.pil:
             # Convert im back to PIL and update draw
             self.fromarray(self.im)
+            self.fromarray(self.gt)
 
     def kpts(self, kpts, shape=(640, 640), radius=None, kpt_line=True, conf_thres=0.25, kpt_color=None):
         """
@@ -545,6 +551,7 @@ class Annotator:
 
     def save(self, filename="image.jpg"):
         """Save the annotated image to 'filename'."""
+        cv2.imwrite(filename.replace(".jpg", "_gt.jpg").replace(".png", "_gt.png"), np.asarray(self.gt))
         cv2.imwrite(filename, np.asarray(self.im))
 
     @staticmethod
