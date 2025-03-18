@@ -445,7 +445,6 @@ class LoadImagesAndVideos:
                 self.count += 1  # move to the next file
                 if self.count >= self.ni:  # end of image list
                     break
-
         return paths, imgs, gts, info
 
     def _new_video(self, path):
