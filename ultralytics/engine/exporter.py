@@ -314,7 +314,8 @@ class Exporter:
             raise SystemError("TensorFlow.js export not supported on ARM64 Linux")
 
         # Input
-        im = torch.zeros(self.args.batch, 3, *self.imgsz).to(self.device)
+        ch = 4 if self.args.usegt else 3
+        im = torch.zeros(self.args.batch, ch, *self.imgsz).to(self.device)
         file = Path(
             getattr(model, "pt_path", None) or getattr(model, "yaml_file", None) or model.yaml.get("yaml_file", "")
         )

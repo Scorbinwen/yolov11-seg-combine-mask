@@ -37,8 +37,7 @@ def parse_opt():
     # 创建完整参数解析器
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', required=True)
-    parser.add_argument('--source', required=True, help='predict的数据路径')
-    parser.add_argument('--mode', default="predict", help='predict mode')
+    parser.add_argument('--format', default="torchscript", help="export format")
     parser.add_argument('--cfg', default=base_args.cfg)
 
     # 动态添加参数
@@ -66,6 +65,6 @@ if __name__ == "__main__":
     model = YOLO(args.model)
 
     # 执行预测
-    results = model.predict(
+    results = model.export(
         **cfg_params,
     )

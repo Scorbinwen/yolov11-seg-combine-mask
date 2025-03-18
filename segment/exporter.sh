@@ -1,0 +1,1 @@
+python exporter.py  --model ../runs/train45/weights/last.pt --format "torchscript"

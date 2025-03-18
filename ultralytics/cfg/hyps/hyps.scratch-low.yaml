@@ -54,7 +54,7 @@ save_hybrid: False # (bool) save hybrid version of labels (labels + additional p
 conf: # (float, optional) object confidence threshold for detection (default 0.25 predict, 0.001 val)
 iou: 0.7 # (float) intersection over union (IoU) threshold for NMS
 max_det: 300 # (int) maximum number of detections per image
-half: False # (bool) use half precision (FP16)
+half: True # (bool) use half precision (FP16)
 dnn: False # (bool) use OpenCV DNN for ONNX inference
 plots: True # (bool) save plots and images during train/val
 
