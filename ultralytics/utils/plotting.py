@@ -390,6 +390,69 @@ class Annotator:
                     thickness=self.tf,
                     lineType=cv2.LINE_AA,
                 )
+    def append_label(self, class_dict, conf_dict, colors, add_w=160):
+        if self.pil:
+            # 图像后面标名每个类别的颜色
+            # 绘制文本区域
+            pil_im = Image.fromarray(self.im)
+            original_w, original_h, _ = self.im.shape
+            new_im = Image.new("RGB", (original_w + add_w, original_h), (255, 255, 255))  # 白色背景
+            new_im.paste(pil_im, (0, 0))  # 将原图粘贴到新图像上
+
+            i = 0
+            for key in class_dict.keys():
+                cls_name = key
+                color = colors(class_dict[key], True)
+                conf = conf_dict[key]
+                # 设置文本绘制的位置
+                draw = ImageDraw.Draw(new_im)
+                if (i+1)*10 >= original_h:
+                    break
+                text_position = (original_w + 10, i*20)  # 垂直居中
+
+                # 绘制文本区域
+                draw.rectangle([original_w, i*20, original_w + add_w, (i+1)*20],
+                               fill=color)  # 绘制文本区域
+
+                label = f'{cls_name} {conf}'
+                # 在文本区域绘制文本
+                draw.text(text_position, label, fill=(255, 255, 255), font=self.font)  #
+                i += 1
+            self.im = np.asarray(new_im)
+        else:
+            # 使用OpenCV实现右侧类别标注
+            h, w = self.im.shape[:2]  # 获取原图高度和宽度
+            new_im = np.full((h, w + add_w, 3), 255, dtype=np.uint8)  # 创建白色背景
+
+            # 复制原图到左侧
+            new_im[:, :w] = self.im
+
+            # 设置文本参数
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.6
+            thickness = 1
+
+            for i, (cls_name, cls_id) in enumerate(class_dict.items()):
+                y = 30 * (i + 1)  # 每行间隔30像素
+                if y > h - 20:  # 超出图像高度则停止绘制
+                    break
+                # 获取颜色并转换BGR顺序
+                color = colors(cls_id, bgr=True)
+                conf = f'{conf_dict[cls_name]:.2f}'
+                label = f'{cls_name} {conf}'
+
+                # 绘制颜色块
+                cv2.rectangle(new_im, (w, y - 20), (w + add_w, y), color, -1)
+
+                # 绘制文本（调整位置居中）
+                text_size = cv2.getTextSize(label, font, font_scale, thickness)[0]
+                text_x = w + (add_w - text_size[0]) // 2
+                text_y = y - 5  # 垂直居中
+
+                cv2.putText(new_im, label, (text_x, text_y),
+                            font, font_scale, (255, 255, 255),
+                            thickness, cv2.LINE_AA)
+            self.im = new_im
 
     def masks(self, masks, colors, im_gpu, alpha=0.5, retina_masks=False):
         """

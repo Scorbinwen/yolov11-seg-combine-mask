@@ -538,11 +538,17 @@ class Results(SimpleClass):
 
         # Plot Detect results
         if pred_boxes is not None and show_boxes:
+            class_dict = {}
+            conf_dict = {}
             for i, d in enumerate(reversed(pred_boxes)):
                 c, d_conf, id = int(d.cls), float(d.conf) if conf else None, None if d.id is None else int(d.id.item())
                 name = ("" if id is None else f"id:{id} ") + names[c]
                 label = (f"{name} {d_conf:.2f}" if conf else name) if labels else None
                 box = d.xyxyxyxy.reshape(-1, 4, 2).squeeze() if is_obb else d.xyxy.squeeze()
+
+                class_dict[names[c]] = c
+                conf_dict[names[c]] = d_conf
+
                 annotator.box_label(
                     box,
                     label,
@@ -558,7 +564,7 @@ class Results(SimpleClass):
                     ),
                     rotated=is_obb,
                 )
-
+            annotator.append_label(class_dict, conf_dict, colors)
         # Plot Classify results
         if pred_probs is not None and show_probs:
             text = ",\n".join(f"{names[j] if names else j} {pred_probs.data[j]:.2f}" for j in pred_probs.top5)
@@ -583,6 +589,7 @@ class Results(SimpleClass):
         # Save results
         if save:
             annotator.save(filename)
+
 
         return annotator.im if pil else annotator.result()
 
