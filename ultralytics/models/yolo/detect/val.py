@@ -49,19 +49,6 @@ class DetectionValidator(BaseValidator):
 
     def preprocess(self, batch):
         """Preprocesses batch of images for YOLO training."""
-        # concat gt to img
-        gt = batch["gt"]
-        if gt is not None:
-            if batch["img"].dim() == 4:
-                gt = 0.2989 * gt[:, 0, ...] + 0.5870 * gt[:, 1, ...] + 0.1140 * gt[:, 2, ...]
-                gt = gt.unsqueeze(dim=1)
-                concat_dim = 1
-            else:
-                gt = 0.2989 * gt[0, ...] + 0.5870 * gt[1, ...] + 0.1140 * gt[2, ...]
-                gt = gt.unsqueeze(dim=0)
-                concat_dim = 0
-            gt = torch.where(gt > 127, 255, 0)
-            batch["img"] = torch.concat([batch["img"], gt], dim=concat_dim)
         batch["img"] = (batch["img"].half() if self.args.half else batch["img"].float()) / 255
         batch["img"] = batch["img"].to(self.device, non_blocking=True)
 

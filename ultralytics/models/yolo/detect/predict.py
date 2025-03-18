@@ -39,7 +39,7 @@ class DetectionPredictor(BasePredictor):
 
         return self.construct_results(preds, img, orig_imgs, protos, **kwargs)
 
-    def construct_results(self, preds, img, orig_imgs, protos=None, mask_pred=None, gts=None):
+    def construct_results(self, preds, img, orig_imgs, protos=None, mask_pred=None):
         """
         Constructs a list of result objects from the predictions.
 

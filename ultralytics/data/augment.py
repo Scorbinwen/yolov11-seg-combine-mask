@@ -944,8 +944,6 @@ class MixUp(BaseMixTransform):
         r = np.random.beta(32.0, 32.0)  # mixup ratio, alpha=beta=32.0
         labels2 = labels["mix_labels"][0]
         labels["img"] = (labels["img"] * r + labels2["img"] * (1 - r)).astype(np.uint8)
-        if labels2["gt"] is not None:
-            labels["gt"] = (labels["gt"] * r + labels2["gt"] * (1 - r)).astype(np.uint8)
         labels["instances"] = Instances.concatenate([labels["instances"], labels2["instances"]], axis=0)
         labels["cls"] = np.concatenate([labels["cls"], labels2["cls"]], 0)
         return labels
@@ -1016,7 +1014,7 @@ class RandomPerspective:
         self.border = border  # mosaic border
         self.pre_transform = pre_transform
 
-    def affine_transform(self, img, gt, border):
+    def affine_transform(self, img, border):
         """
         Applies a sequence of affine transformations centered around the image center.
 
@@ -1038,7 +1036,7 @@ class RandomPerspective:
             >>> import numpy as np
             >>> img = np.random.rand(100, 100, 3)
             >>> border = (10, 10)
-            >>> transformed_img, transformed_gt, matrix, scale = affine_transform(img, gt, border)
+            >>> transformed_img, matrix, scale = affine_transform(img, border)
         """
         # Center
         C = np.eye(3, dtype=np.float32)
@@ -1075,13 +1073,9 @@ class RandomPerspective:
         if (border[0] != 0) or (border[1] != 0) or (M != np.eye(3)).any():  # image changed
             if self.perspective:
                 img = cv2.warpPerspective(img, M, dsize=self.size, borderValue=(114, 114, 114))
-                if gt is not None:
-                    gt = cv2.warpPerspective(gt, M, dsize=self.size, borderValue=(114, 114, 114))
             else:  # affine
                 img = cv2.warpAffine(img, M[:2], dsize=self.size, borderValue=(114, 114, 114))
-                if gt is not None:
-                    gt = cv2.warpAffine(gt, M[:2], dsize=self.size, borderValue=(114, 114, 114))
-        return img, gt, M, s
+        return img, M, s
 
     def apply_bboxes(self, bboxes, M):
         """
@@ -1117,7 +1111,7 @@ class RandomPerspective:
         y = xy[:, [1, 3, 5, 7]]
         return np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1)), dtype=bboxes.dtype).reshape(4, n).T
 
-    def apply_segments(self, segments, M, border):
+    def apply_segments(self, segments, M):
         """
         Apply affine transformations to segments and generate new bounding boxes.
 
@@ -1125,35 +1119,34 @@ class RandomPerspective:
         the transformed segments. It clips the transformed segments to fit within the new bounding boxes.
 
         Args:
-            segments (np.ndarray): Input segments with shape (N, W, H), where N is the number of segments and M is the
+            segments (np.ndarray): Input segments with shape (N, M, 2), where N is the number of segments and M is the
                 number of points in each segment.
             M (np.ndarray): Affine transformation matrix with shape (3, 3).
 
         Returns:
             (Tuple[np.ndarray, np.ndarray]): A tuple containing:
                 - New bounding boxes with shape (N, 4) in xyxy format.
-                - Transformed segments with shape (N, W, H).
+                - Transformed segments with shape (N, M, 2).
 
         Examples:
             >>> segments = np.random.rand(10, 500, 2)  # 10 segments with 500 points each
             >>> M = np.eye(3)  # Identity transformation matrix
             >>> new_bboxes, new_segments = apply_segments(segments, M)
         """
-        if (border[0] != 0) or (border[1] != 0) or (M != np.eye(3)).any():  # image changed
-            if self.perspective:
-                for i in range(len(segments)):
-                    segments[i] = cv2.warpPerspective(segments[i], M, dsize=self.size, borderValue=0)
-            else:  # affine
-                for i in range(len(segments)):
-                    segments[i] = cv2.warpAffine(segments[i], M[:2], dsize=self.size, borderValue=0)
+        n, num = segments.shape[:2]
+        if n == 0:
+            return [], segments
 
-        new_bboxes = np.zeros((len(segments), 4))
-        for i, segment in enumerate(segments):
-            x, y, w, h = cv2.boundingRect(segment)
-            # convert xywh to xyxy
-            new_bboxes[i] = np.array([x, y, x + w, y + h])
-
-        return new_bboxes, segments
+        xy = np.ones((n * num, 3), dtype=segments.dtype)
+        segments = segments.reshape(-1, 2)
+        xy[:, :2] = segments
+        xy = xy @ M.T  # transform
+        xy = xy[:, :2] / xy[:, 2:3]
+        segments = xy.reshape(n, -1, 2)
+        bboxes = np.stack([segment2box(xy, self.size[0], self.size[1]) for xy in segments], 0)
+        segments[..., 0] = segments[..., 0].clip(bboxes[:, 0:1], bboxes[:, 2:3])
+        segments[..., 1] = segments[..., 1].clip(bboxes[:, 1:2], bboxes[:, 3:4])
+        return bboxes, segments
 
     def apply_keypoints(self, keypoints, M):
         """
@@ -1229,7 +1222,6 @@ class RandomPerspective:
         labels.pop("ratio_pad", None)  # do not need ratio pad
 
         img = labels["img"]
-        gt = labels["gt"]
         cls = labels["cls"]
         instances = labels.pop("instances")
         # Make sure the coord formats are right
@@ -1240,15 +1232,14 @@ class RandomPerspective:
         self.size = img.shape[1] + border[1] * 2, img.shape[0] + border[0] * 2  # w, h
         # M is affine matrix
         # Scale for func:`box_candidates`
-        img, gt, M, scale = self.affine_transform(img, gt, border)
-
+        img, M, scale = self.affine_transform(img, border)
         bboxes = self.apply_bboxes(instances.bboxes, M)
 
         segments = instances.segments
         keypoints = instances.keypoints
         # Update bboxes if there are segments.
         if len(segments):
-            bboxes, segments = self.apply_segments(segments, M, border)
+            bboxes, segments = self.apply_segments(segments, M)
 
         if keypoints is not None:
             keypoints = self.apply_keypoints(keypoints, M)
@@ -1265,7 +1256,6 @@ class RandomPerspective:
         labels["instances"] = new_instances[i]
         labels["cls"] = cls[i]
         labels["img"] = img
-        labels["gt"] = gt
         labels["resized_shape"] = img.shape[:2]
         return labels
 
@@ -1462,7 +1452,6 @@ class RandomFlip:
             >>> flipped_labels = random_flip(labels)
         """
         img = labels["img"]
-        gt = labels["gt"]
         instances = labels.pop("instances")
 
         instances.convert_bbox(format="xywh")
@@ -1472,20 +1461,14 @@ class RandomFlip:
         # Flip up-down
         if self.direction == "vertical" and random.random() < self.p:
             img = np.flipud(img)
-            if gt is not None:
-                gt = np.flipud(gt)
             instances.flipud(h)
         if self.direction == "horizontal" and random.random() < self.p:
             img = np.fliplr(img)
-            if gt is not None:
-                gt = np.fliplr(gt)
             instances.fliplr(w)
             # For keypoints
             if self.flip_idx is not None and instances.keypoints is not None:
                 instances.keypoints = np.ascontiguousarray(instances.keypoints[:, self.flip_idx, :])
         labels["img"] = np.ascontiguousarray(img)
-        if gt is not None:
-            labels["gt"] = np.ascontiguousarray(gt)
         labels["instances"] = instances
         return labels
 
@@ -1573,7 +1556,6 @@ class LetterBox:
         if labels is None:
             labels = {}
         img = labels.get("img") if image is None else image
-        gt = labels.get("gt")
         shape = img.shape[:2]  # current shape [height, width]
         new_shape = labels.pop("rect_shape", self.new_shape)
         if isinstance(new_shape, int):
@@ -1601,17 +1583,11 @@ class LetterBox:
 
         if shape[::-1] != new_unpad:  # resize
             img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
-            if gt is not None:
-                gt = cv2.resize(gt, new_unpad, interpolation=cv2.INTER_LINEAR)
         top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
         left, right = int(round(dw - 0.1)) if self.center else 0, int(round(dw + 0.1))
         img = cv2.copyMakeBorder(
             img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114)
         )  # add border
-        if gt is not None:
-            gt = cv2.copyMakeBorder(
-                gt, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114)
-            )  # add border
         if labels.get("ratio_pad"):
             labels["ratio_pad"] = (labels["ratio_pad"], (left, top))  # for evaluation
 
@@ -1619,8 +1595,6 @@ class LetterBox:
             if mode == "train":
                 labels = self._update_labels(labels, ratio, left, top)
             labels["img"] = img
-            if gt is not None:
-                labels["gt"] = gt
             labels["resized_shape"] = new_shape
             return labels
         else:
@@ -2066,7 +2040,6 @@ class Format:
             >>> print(formatted_labels.keys())
         """
         img = labels.pop("img")
-        gt = labels.pop("gt")
         h, w = img.shape[:2]
         cls = labels.pop("cls")
         instances = labels.pop("instances")
@@ -2075,13 +2048,17 @@ class Format:
         nl = len(instances)
 
         if self.return_mask:
-            # w, h --> h, w
-            labels["segments"] = torch.from_numpy(instances.segments)
-            labels["masks"] = labels["segments"]
+            if nl:
+                masks, instances, cls = self._format_segments(instances, cls, w, h)
+                masks = torch.from_numpy(masks)
+            else:
+                masks = torch.zeros(
+                    1 if self.mask_overlap else nl, img.shape[0] // self.mask_ratio, img.shape[1] // self.mask_ratio
+                )
+            labels["masks"] = masks
+
 
         labels["img"] = self._format_img(img)
-        if gt is not None:
-            labels["gt"] = self._format_img(gt)
         labels["cls"] = torch.from_numpy(cls) if nl else torch.zeros(nl)
         labels["bboxes"] = torch.from_numpy(instances.bboxes) if nl else torch.zeros((nl, 4))
         if self.return_keypoint:

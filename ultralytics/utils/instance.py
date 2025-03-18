@@ -6,7 +6,6 @@ from numbers import Number
 from typing import List
 
 import numpy as np
-from ultralytics.utils import addmaskpad, flipmaskud, flipmasklr, scalemask
 from .ops import ltwh2xywh, ltwh2xyxy, resample_segments, xywh2ltwh, xywh2xyxy, xyxy2ltwh, xyxy2xywh
 
 
@@ -240,47 +239,71 @@ class Instances:
         return self._bboxes.areas()
 
     def scale(self, scale_w, scale_h, bbox_only=False):
-        """Similar to denormalize func but without normalized sign."""
+        """
+        Scale coordinates by given factors.
+
+        Args:
+            scale_w (float): Scale factor for width.
+            scale_h (float): Scale factor for height.
+            bbox_only (bool, optional): Whether to scale only bounding boxes.
+        """
         self._bboxes.mul(scale=(scale_w, scale_h, scale_w, scale_h))
         if bbox_only:
             return
-        if len(self.segments):
-            seg_shape = self.segments[0].shape
-            new_shape = (seg_shape[0] * scale_w, seg_shape[1] * scale_h)
-            if seg_shape != new_shape:
-                self.segments = scalemask(self.segments, new_shape)
-
+        self.segments[..., 0] *= scale_w
+        self.segments[..., 1] *= scale_h
         if self.keypoints is not None:
             self.keypoints[..., 0] *= scale_w
             self.keypoints[..., 1] *= scale_h
 
     def denormalize(self, w, h):
-        """Denormalizes boxes, segments, and keypoints from normalized coordinates."""
+        """
+        Convert normalized coordinates to absolute coordinates.
+
+        Args:
+            w (int): Image width.
+            h (int): Image height.
+        """
         if not self.normalized:
             return
         self._bboxes.mul(scale=(w, h, w, h))
-
+        self.segments[..., 0] *= w
+        self.segments[..., 1] *= h
         if self.keypoints is not None:
             self.keypoints[..., 0] *= w
             self.keypoints[..., 1] *= h
         self.normalized = False
 
     def normalize(self, w, h):
-        """Normalize bounding boxes, segments, and keypoints to image dimensions."""
+        """
+        Convert absolute coordinates to normalized coordinates.
+
+        Args:
+            w (int): Image width.
+            h (int): Image height.
+        """
         if self.normalized:
             return
         self._bboxes.mul(scale=(1 / w, 1 / h, 1 / w, 1 / h))
-
+        self.segments[..., 0] /= w
+        self.segments[..., 1] /= h
         if self.keypoints is not None:
             self.keypoints[..., 0] /= w
             self.keypoints[..., 1] /= h
         self.normalized = True
 
     def add_padding(self, padw, padh):
-        """Handle rect and mosaic situation."""
+        """
+        Add padding to coordinates.
+
+        Args:
+            padw (int): Padding width.
+            padh (int): Padding height.
+        """
         assert not self.normalized, "you should add padding with absolute coordinates."
         self._bboxes.add(offset=(padw, padh, padw, padh))
-        self.segments = addmaskpad(self.segments, padh, padw)
+        self.segments[..., 0] += padw
+        self.segments[..., 1] += padh
         if self.keypoints is not None:
             self.keypoints[..., 0] += padw
             self.keypoints[..., 1] += padh
@@ -314,7 +337,12 @@ class Instances:
         )
 
     def flipud(self, h):
-        """Flips the coordinates of bounding boxes, segments, and keypoints vertically."""
+        """
+        Flip coordinates vertically.
+
+        Args:
+            h (int): Image height.
+        """
         if self._bboxes.format == "xyxy":
             y1 = self.bboxes[:, 1].copy()
             y2 = self.bboxes[:, 3].copy()
@@ -322,13 +350,17 @@ class Instances:
             self.bboxes[:, 3] = h - y1
         else:
             self.bboxes[:, 1] = h - self.bboxes[:, 1]
-
-        self.segments = flipmaskud(self.segments)
+        self.segments[..., 1] = h - self.segments[..., 1]
         if self.keypoints is not None:
             self.keypoints[..., 1] = h - self.keypoints[..., 1]
 
     def fliplr(self, w):
-        """Reverses the order of the bounding boxes and segments horizontally."""
+        """
+        Flip coordinates horizontally.
+
+        Args:
+            w (int): Image width.
+        """
         if self._bboxes.format == "xyxy":
             x1 = self.bboxes[:, 0].copy()
             x2 = self.bboxes[:, 2].copy()
@@ -336,49 +368,61 @@ class Instances:
             self.bboxes[:, 2] = w - x1
         else:
             self.bboxes[:, 0] = w - self.bboxes[:, 0]
-        if len(self.segments):
-            self.segments = flipmasklr(self.segments)
-
+        self.segments[..., 0] = w - self.segments[..., 0]
         if self.keypoints is not None:
             self.keypoints[..., 0] = w - self.keypoints[..., 0]
 
     def clip(self, w, h):
-        """Clips bounding boxes, segments, and keypoints values to stay within image boundaries."""
+        """
+        Clip coordinates to stay within image boundaries.
+
+        Args:
+            w (int): Image width.
+            h (int): Image height.
+        """
         ori_format = self._bboxes.format
         self.convert_bbox(format="xyxy")
         self.bboxes[:, [0, 2]] = self.bboxes[:, [0, 2]].clip(0, w)
         self.bboxes[:, [1, 3]] = self.bboxes[:, [1, 3]].clip(0, h)
         if ori_format != "xyxy":
             self.convert_bbox(format=ori_format)
-        # clip segments
-        if len(self.segments):
-            seg_shape = self.segments[0].shape
-            if seg_shape != (w, h):
-                clip_mask = np.zeros(seg_shape, dtype=self.segments.dtype)
-                clip_mask[0:w, 0:h] = 1
-                self.segments *= clip_mask
-
+        self.segments[..., 0] = self.segments[..., 0].clip(0, w)
+        self.segments[..., 1] = self.segments[..., 1].clip(0, h)
         if self.keypoints is not None:
             self.keypoints[..., 0] = self.keypoints[..., 0].clip(0, w)
             self.keypoints[..., 1] = self.keypoints[..., 1].clip(0, h)
 
     def remove_zero_area_boxes(self):
-        """Remove zero-area boxes, i.e. after clipping some boxes may have zero width or height."""
+        """
+        Remove zero-area boxes, i.e. after clipping some boxes may have zero width or height.
+
+        Returns:
+            (np.ndarray): Boolean array indicating which boxes were kept.
+        """
         good = self.bbox_areas > 0
         if not all(good):
             self._bboxes = self._bboxes[good]
-            self.segments = self.segments[good]
+            if len(self.segments):
+                self.segments = self.segments[good]
             if self.keypoints is not None:
                 self.keypoints = self.keypoints[good]
         return good
 
     def update(self, bboxes, segments=None, keypoints=None):
-        """Updates instance variables."""
+        """
+        Update instance variables.
+
+        Args:
+            bboxes (np.ndarray): New bounding boxes.
+            segments (np.ndarray, optional): New segments.
+            keypoints (np.ndarray, optional): New keypoints.
+        """
         self._bboxes = Bboxes(bboxes, format=self._bboxes.format)
         if segments is not None:
             self.segments = segments
         if keypoints is not None:
             self.keypoints = keypoints
+
 
     def __len__(self):
         """Return the length of the instance list."""
@@ -387,14 +431,14 @@ class Instances:
     @classmethod
     def concatenate(cls, instances_list: List["Instances"], axis=0) -> "Instances":
         """
-        Concatenates a list of Instances objects into a single Instances object.
+        Concatenate a list of Instances objects into a single Instances object.
 
         Args:
             instances_list (List[Instances]): A list of Instances objects to concatenate.
-            axis (int, optional): The axis along which the arrays will be concatenated. Defaults to 0.
+            axis (int, optional): The axis along which the arrays will be concatenated.
 
         Returns:
-            Instances: A new Instances object containing the concatenated bounding boxes,
+            (Instances): A new Instances object containing the concatenated bounding boxes,
                        segments, and keypoints if present.
 
         Note:
@@ -415,8 +459,20 @@ class Instances:
         normalized = instances_list[0].normalized
 
         cat_boxes = np.concatenate([ins.bboxes for ins in instances_list], axis=axis)
-
-        cat_segments = np.concatenate([b.segments for b in instances_list], axis=axis)
+        seg_len = [b.segments.shape[1] for b in instances_list]
+        if len(frozenset(seg_len)) > 1:  # resample segments if there's different length
+            max_len = max(seg_len)
+            cat_segments = np.concatenate(
+                [
+                    resample_segments(list(b.segments), max_len)
+                    if len(b.segments)
+                    else np.zeros((0, max_len, 2), dtype=np.float32)  # re-generating empty segments
+                    for b in instances_list
+                ],
+                axis=axis,
+            )
+        else:
+            cat_segments = np.concatenate([b.segments for b in instances_list], axis=axis)
         cat_keypoints = np.concatenate([b.keypoints for b in instances_list], axis=axis) if use_keypoint else None
         return cls(cat_boxes, cat_segments, cat_keypoints, bbox_format, normalized)
 

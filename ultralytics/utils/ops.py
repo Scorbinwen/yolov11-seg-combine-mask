@@ -616,12 +616,19 @@ def ltwh2xyxy(x):
 
 
 def segments2boxes(segments):
-    # Convert segment labels to box labels, i.e. (cls, xy1, xy2, ...) to (cls, xywh)
+    """
+    Convert segment labels to box labels, i.e. (cls, xy1, xy2, ...) to (cls, xywh).
+
+    Args:
+        segments (List): List of segments, each segment is a list of points, each point is a list of x, y coordinates.
+
+    Returns:
+        (np.ndarray): The xywh coordinates of the bounding boxes.
+    """
     boxes = []
     for s in segments:
-        img_h, img_w = s['size']
-        x, y, w, h = maskUtils.toBbox(s)
-        boxes.append([x/img_w, y/img_h, (x+w)/img_w, (y+h)/img_h])  # cls, xyxy
+        x, y = s.T  # segment xy
+        boxes.append([x.min(), y.min(), x.max(), y.max()])  # cls, xyxy
     return xyxy2xywh(np.array(boxes))  # cls, xywh
 
 

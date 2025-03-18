@@ -112,7 +112,6 @@ def build_yolo_dataset(cfg, img_path, batch, data, mode="train", rect=False, str
         classes=cfg.classes,
         data=data,
         fraction=cfg.fraction if mode == "train" else 1.0,
-        usegt=cfg.usegt,
     )
 
 
@@ -184,7 +183,7 @@ def check_source(source):
     return source, webcam, screenshot, from_img, in_memory, tensor
 
 
-def load_inference_source(source=None, batch=1, vid_stride=1, buffer=False, usegt=False):
+def load_inference_source(source=None, batch=1, vid_stride=1, buffer=False):
     """
     Loads an inference source for object detection and applies necessary transformations.
 
@@ -199,7 +198,6 @@ def load_inference_source(source=None, batch=1, vid_stride=1, buffer=False, useg
     """
     source, stream, screenshot, from_img, in_memory, tensor = check_source(source)
     source_type = source.source_type if in_memory else SourceTypes(stream, screenshot, from_img, tensor)
-
     # Dataloader
     if tensor:
         dataset = LoadTensor(source)
@@ -212,7 +210,7 @@ def load_inference_source(source=None, batch=1, vid_stride=1, buffer=False, useg
     elif from_img:
         dataset = LoadPilAndNumpy(source)
     else:
-        dataset = LoadImagesAndVideos(source, batch=batch, vid_stride=vid_stride, usegt=usegt)
+        dataset = LoadImagesAndVideos(source, batch=batch, vid_stride=vid_stride)
 
     # Attach source types to the dataset
     setattr(dataset, "source_type", source_type)

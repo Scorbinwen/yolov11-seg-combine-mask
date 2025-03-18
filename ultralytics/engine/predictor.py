@@ -115,7 +115,7 @@ class BasePredictor:
         self._lock = threading.Lock()  # for automatic thread-safe inference
         callbacks.add_integration_callbacks(self)
 
-    def preprocess(self, ims, gts):
+    def preprocess(self, ims):
         """
         Prepares input image before inference.
 
@@ -125,22 +125,12 @@ class BasePredictor:
         """
         not_tensor = not isinstance(ims, torch.Tensor)
         if not_tensor:
-            labels = self.pre_transform(ims, gts)
+            labels = self.pre_transform(ims)
             img = [lb["img"] for lb in labels]
             im = np.stack(img)
             im = im[..., ::-1].transpose((0, 3, 1, 2))  # BGR to RGB, BHWC to BCHW, (n, 3, h, w)
             im = np.ascontiguousarray(im)  # contiguous
             im = torch.from_numpy(im)
-            gt = [lb["gt"] for lb in labels]
-            if gt is not None:
-                gt = np.stack(gt)
-                gt = gt[..., ::-1].transpose((0, 3, 1, 2))  # BGR to RGB, BHWC to BCHW, (n, 3, h, w)
-                gt = np.ascontiguousarray(gt)  # contiguous
-                gt = torch.from_numpy(gt)
-                gt = 0.2989 * gt[:, 0, ...] + 0.5870 * gt[:, 1, ...] + 0.1140 * gt[:, 2, ...]
-                gt = gt.unsqueeze(dim=1)
-                gt = torch.where(gt > 127, 255, 0)
-                im = torch.concat([im, gt], dim=1)
 
         im = im.to(self.device)
         im = im.half() if self.model.fp16 else im.float()  # uint8 to fp16/32
@@ -158,13 +148,12 @@ class BasePredictor:
         )
         return self.model(im, augment=self.args.augment, visualize=visualize, embed=self.args.embed, *args, **kwargs)
 
-    def pre_transform(self, imgs, gts):
+    def pre_transform(self, imgs):
         """
         Pre-transform input image before inference.
 
         Args:
             imgs (List(np.ndarray)): (N, 3, h, w) for tensor, [(h, w, 3) x N] for list.
-            gts (List(np.ndarray)): (N, 3, h, w) for tensor, [(h, w, 3) x N] for list.
         Returns:
             (list): A list of transformed images.
         """
@@ -174,10 +163,9 @@ class BasePredictor:
             auto=same_shapes and (self.model.pt or (getattr(self.model, "dynamic", False) and not self.model.imx)),
             stride=self.model.stride,
         )
+        return [letterbox(labels={"img": img}, mode="predict") for img in imgs]
 
-        return [letterbox(labels={"img": img, "gt": gt}, mode="predict") for img, gt in zip(imgs, gts)]
-
-    def postprocess(self, preds, img, orig_imgs, gts=None):
+    def postprocess(self, preds, img, orig_imgs):
         """Post-processes predictions for an image and returns them."""
         return preds
 
@@ -222,7 +210,6 @@ class BasePredictor:
             batch=self.args.batch,
             vid_stride=self.args.vid_stride,
             buffer=self.args.stream_buffer,
-            usegt=self.args.usegt,
         )
         self.source_type = self.dataset.source_type
         if not getattr(self, "stream", True) and (
@@ -254,8 +241,7 @@ class BasePredictor:
 
             # Warmup model
             if not self.done_warmup:
-                ch = 4 if self.args.usegt else 3
-                self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, ch, *self.imgsz))
+                self.model.warmup(imgsz=(1 if self.model.pt or self.model.triton else self.dataset.bs, 3, *self.imgsz))
                 self.done_warmup = True
 
             self.seen, self.windows, self.batch = 0, [], None
@@ -267,11 +253,11 @@ class BasePredictor:
             self.run_callbacks("on_predict_start")
             for self.batch in self.dataset:
                 self.run_callbacks("on_predict_batch_start")
-                paths, im0s, gts, s = self.batch
+                paths, im0s, s = self.batch
 
                 # Preprocess
                 with profilers[0]:
-                    im = self.preprocess(im0s, gts)
+                    im = self.preprocess(im0s)
 
                 # Inference
                 with profilers[1]:
@@ -282,7 +268,7 @@ class BasePredictor:
 
                 # Postprocess
                 with profilers[2]:
-                    self.results = self.postprocess(preds, im, im0s, gts=gts)
+                    self.results = self.postprocess(preds, im, im0s)
                 self.run_callbacks("on_predict_postprocess_end")
 
                 # Visualize, save, write results
@@ -375,8 +361,6 @@ class BasePredictor:
         if self.args.show:
             self.show(str(p))
         if self.args.save:
-            if self.args.usegt:
-                cv2.imwrite(str(self.save_dir / p.name.replace(".png", "_gt.png").replace(".jpg", "_gt.jpg")), result.gt)  # save to JPG for best support
             cv2.imwrite(str(self.save_dir / p.name.replace(".png", "_ori.png").replace(".jpg", "_ori.jpg")),
                         result.orig_img)  # save to JPG for best support
             self.save_predicted_images(str(self.save_dir / p.name), frame)

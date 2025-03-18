@@ -38,7 +38,7 @@ class SegmentationPredictor(DetectionPredictor):
 
         return super().postprocess(pred, img, orig_imgs, mask_preds=mask_pred if self.combine_mask else None, protos=proto, **kwargs)
 
-    def construct_results(self, preds, img, orig_imgs, protos, mask_preds=None, gts=None):
+    def construct_results(self, preds, img, orig_imgs, protos, mask_preds=None):
         """
         Constructs a list of result objects from the predictions.
 
@@ -46,7 +46,6 @@ class SegmentationPredictor(DetectionPredictor):
             preds (List[torch.Tensor]): List of predicted bounding boxes, scores, and masks.
             img (torch.Tensor): The image after preprocessing.
             orig_imgs (List[np.ndarray]): List of original images before preprocessing.
-            gts (List[torch.Tensor]): List of gt images.
             protos (List[torch.Tensor]): List of prototype masks.
             mask_pred(List[torch.Tensor]): List of predicted masks (optional).
                 not None if self.combine_mask is True.
@@ -56,17 +55,10 @@ class SegmentationPredictor(DetectionPredictor):
         """
         assert (mask_preds is not None) == self.combine_mask, "mask_preds should be None if self.combine_mask is False, or vise versa."
         if self.combine_mask:
-            if self.args.usegt:
-                return [
-                    self.construct_result(pred, img, orig_img, img_path, proto, mask_pred, gt)
-                    for pred, orig_img, gt, img_path, proto, mask_pred in
-                    zip(preds, orig_imgs, gts, self.batch[0], protos, mask_preds)
-                ]
-            else:
-                return [
-                    self.construct_result(pred, img, orig_img, img_path, proto, mask_pred)
-                    for pred, orig_img, img_path, proto, mask_pred in zip(preds, orig_imgs, self.batch[0], protos, mask_preds)
-                ]
+            return [
+                self.construct_result(pred, img, orig_img, img_path, proto, mask_pred)
+                for pred, orig_img, img_path, proto, mask_pred in zip(preds, orig_imgs, self.batch[0], protos, mask_preds)
+            ]
         else:
             return [
                 self.construct_result(pred, img, orig_img, img_path, proto)

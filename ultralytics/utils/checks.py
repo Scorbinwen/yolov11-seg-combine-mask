@@ -669,8 +669,6 @@ def check_amp(model):
         (bool): Returns True if the AMP functionality works correctly with YOLO11 model, else False.
     """
     from ultralytics.utils.torch_utils import autocast
-    # default use amp
-    return True
     device = next(model.parameters()).device  # get model device
     prefix = colorstr("AMP: ")
     if device.type in {"cpu", "mps"}:
@@ -702,26 +700,26 @@ def check_amp(model):
     im = ASSETS / "bus.jpg"  # image to check
     LOGGER.info(f"{prefix}running Automatic Mixed Precision (AMP) checks...")
     warning_msg = "Setting 'amp=True'. If you experience zero-mAP or NaN losses you can disable AMP with amp=False."
-    try:
-        from ultralytics import YOLO
+    # try:
+    from ultralytics import YOLO
 
-        assert amp_allclose(YOLO("../weights/yolo11l-seg.pt"), im)
-        LOGGER.info(f"{prefix}checks passed ✅")
-    except ConnectionError:
-        LOGGER.warning(
-            f"{prefix}checks skipped ⚠️. Offline and unable to download YOLO11n for AMP checks. {warning_msg}"
-        )
-    except (AttributeError, ModuleNotFoundError):
-        LOGGER.warning(
-            f"{prefix}checks skipped ⚠️. "
-            f"Unable to load YOLO11n for AMP checks due to possible Ultralytics package modifications. {warning_msg}"
-        )
-    except AssertionError:
-        LOGGER.warning(
-            f"{prefix}checks failed ❌. Anomalies were detected with AMP on your system that may lead to "
-            f"NaN losses or zero-mAP results, so AMP will be disabled during training."
-        )
-        return False
+    assert amp_allclose(YOLO("../weights/yolo11l-seg.pt"), im)
+    LOGGER.info(f"{prefix}checks passed ✅")
+    # except ConnectionError:
+    #     LOGGER.warning(
+    #         f"{prefix}checks skipped ⚠️. Offline and unable to download YOLO11n for AMP checks. {warning_msg}"
+    #     )
+    # except (AttributeError, ModuleNotFoundError):
+    #     LOGGER.warning(
+    #         f"{prefix}checks skipped ⚠️. "
+    #         f"Unable to load YOLO11n for AMP checks due to possible Ultralytics package modifications. {warning_msg}"
+    #     )
+    # except AssertionError:
+    #     LOGGER.warning(
+    #         f"{prefix}checks failed ❌. Anomalies were detected with AMP on your system that may lead to "
+    #         f"NaN losses or zero-mAP results, so AMP will be disabled during training."
+    #     )
+    #     return False
     return True
 
 

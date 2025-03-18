@@ -26,7 +26,6 @@ import numpy as np
 import torch
 import tqdm
 import yaml
-import pycocotools.mask as maskUtils
 from ultralytics import __version__
 
 
@@ -688,36 +687,6 @@ def is_dir_writeable(dir_path: Union[str, Path]) -> bool:
         (bool): True if the directory is writeable, False otherwise.
     """
     return os.access(str(dir_path), os.W_OK)
-
-def rle2mask(segments, resized_shape):
-    h, w = resized_shape
-    seg_masks = np.zeros((len(segments),) + (w, h), np.uint8)
-    # segments only for one image
-    for i_s, segment in enumerate(segments):
-        seg_masks[i_s] = cv2.resize(maskUtils.decode(segment), (int(w), int(h)), interpolation=cv2.INTER_LINEAR)
-    return seg_masks
-
-def addmaskpad(segments, padh, padw):
-    top, bottom = int(round(padh - 0.1)), int(round(padh + 0.1))
-    left, right = int(round(padw - 0.1)), int(round(padw + 0.1))
-    new_segments = []
-    for i in range(len(segments)):
-        new_segments.append(cv2.copyMakeBorder(segments[i], top, bottom, left, right, cv2.BORDER_CONSTANT, value=0))
-    return np.array(new_segments)
-
-def flipmasklr(masks):
-    for i in range(len(masks)):
-        masks[i] = np.fliplr(masks[i])
-    return masks
-def flipmaskud(masks):
-    for i in range(len(masks)):
-        masks[i] = np.flipud(masks[i])
-    return masks
-
-def scalemask(masks, imgsz):
-    for i in range(len(masks)):
-        masks[i] = cv2.resize(masks[i], imgsz)
-    return masks
 
 def is_pytest_running():
     """

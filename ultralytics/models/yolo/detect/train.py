@@ -57,19 +57,6 @@ class DetectionTrainer(BaseTrainer):
 
     def preprocess_batch(self, batch):
         """Preprocesses a batch of images by scaling and converting to float."""
-        # concat gt to img
-        gt = batch["gt"]
-        if gt is not None:
-            if batch["img"].dim() == 4:
-                gt = 0.2989 * gt[:, 0, ...] + 0.5870 * gt[:, 1, ...] + 0.1140 * gt[:, 2, ...]
-                gt = gt.unsqueeze(dim=1)
-                concat_dim = 1
-            else:
-                gt = 0.2989 * gt[0, ...] + 0.5870 * gt[1, ...] + 0.1140 * gt[2, ...]
-                gt = gt.unsqueeze(dim=0)
-                concat_dim = 0
-            gt = torch.where(gt > 127, 255, 0)
-            batch["img"] = torch.concat([batch["img"], gt], dim=concat_dim)
 
         batch["img"] = batch["img"].to(self.device, non_blocking=True).float() / 255
         if self.args.multi_scale:

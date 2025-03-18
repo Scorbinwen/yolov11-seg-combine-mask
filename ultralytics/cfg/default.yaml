@@ -25,7 +25,6 @@ name: # (str, optional) experiment name, results saved to 'project/name' directo
 exist_ok: False # (bool) whether to overwrite existing experiment
 pretrained: True # (bool | str) whether to use a pretrained model (bool) or a model to load weights from (str)
 pretrained_ckpt:
-usegt: False
 optimizer: auto # (str) optimizer to use, choices=[SGD, Adam, Adamax, AdamW, NAdam, RAdam, RMSProp, auto]
 verbose: True # (bool) whether to print verbose output
 seed: 0 # (int) random seed for reproducibility
