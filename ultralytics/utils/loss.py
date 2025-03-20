@@ -292,7 +292,7 @@ class v8SegmentationLoss(v8DetectionLoss):
             # pred_masks shape:[BS, num_classes, H, W]
             pred_masks = pred_masks.permute(0, 1, 2, 3).contiguous()
         else:
-            # pred_masks shape:[BS, num_anchors, nm]q
+            # pred_masks shape:[BS, num_anchors, nm]
             assert pred_masks.dim() == 3, "pred_masks should be of dim 3 in non-combine_mask mode"
             pred_masks = pred_masks.permute(0, 2, 1).contiguous()
 
